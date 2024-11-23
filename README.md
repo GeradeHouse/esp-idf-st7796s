@@ -21,7 +21,6 @@ Still ironing out some quirks. Got a few things to fix.
 
 ---
 
-# Original README Below  
 _The following documentation is from the original repository:_  
 
 ---
