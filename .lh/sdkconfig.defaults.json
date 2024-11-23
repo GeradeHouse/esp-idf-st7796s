@@ -3,11 +3,27 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 4,
             "patches": [
                 {
                     "date": 1731785793240,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1732398561641,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -7,5 +7,6 @@\n \r\n #\r\n # ESP32S3-specific\r\n #\r\n-CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ=240\r\n+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=n\r\n+\r\n"
+                },
+                {
+                    "date": 1732398577232,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -5,8 +5,8 @@\n CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions.csv\"\r\n CONFIG_PARTITION_TABLE_FILENAME=\"partitions.csv\"\r\n \r\n #\r\n-# ESP32S3-specific\r\n+# \r\n #\r\n CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=n\r\n \r\n"
+                },
+                {
+                    "date": 1732398583418,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -5,8 +5,8 @@\n CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions.csv\"\r\n CONFIG_PARTITION_TABLE_FILENAME=\"partitions.csv\"\r\n \r\n #\r\n-# Sets\r\n+# Sets the default CPU frequency\r\n #\r\n CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=n\r\n \r\n"
+                },
+                {
+                    "date": 1732398831169,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -7,5 +7,5 @@\n \r\n #\r\n # Sets the default CPU frequency in MHz, where n means the frequency in MHz.\r\n #\r\n-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240\n\\ No newline at end of file\n+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240\r\n"
                 }
             ],
             "date": 1731785793240,

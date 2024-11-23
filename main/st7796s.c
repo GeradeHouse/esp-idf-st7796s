@@ -373,10 +373,12 @@ void lcdInit(TFT_t *dev, int width, int height, int offsetx, int offsety, uint8_
     }
     delayMS(10);                            // Wait for 10 milliseconds after setting negative gamma
 
-    // Enable display inversion for better color reproduction (inverts display colors)
-    ESP_LOGI(TAG, "Enabling Display Inversion");
-    spi_master_write_command(dev, 0x21);    // Send the Display Inversion On command (0x21)
-    delayMS(10);                            // Wait for 10 milliseconds after enabling inversion
+    // Conditionaly Enable display inversion for better color reproduction (inverts display colors)
+    #if CONFIG_INVERSION
+        ESP_LOGI(TAG, "Enabling Display Inversion");
+        spi_master_write_command(dev, 0x21);    // INVON: Display Inversion On
+        delayMS(10);                            // Wait for 10 milliseconds after enabling inversion
+    #endif
 
     // Set the display to normal mode (exit partial mode or idle mode if previously set)
     ESP_LOGI(TAG, "Setting Normal Display Mode");

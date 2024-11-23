@@ -1041,10 +1041,10 @@ void st7796s_task(void *pvParameters)
     lcdInit(&dev, CONFIG_WIDTH, CONFIG_HEIGHT, CONFIG_OFFSETX, CONFIG_OFFSETY, CONFIG_ORIENTATION);
     ESP_LOGI(TAG, "LCD Initialized with orientation 0x%02X", CONFIG_ORIENTATION);
 
-#if CONFIG_INVERSION
-    ESP_LOGI(TAG, "Enable Display Inversion");
-    lcdInversionOn(&dev);
-#endif
+// #if CONFIG_INVERSION
+//     ESP_LOGI(TAG, "Enable Display Inversion");
+//     lcdInversionOn(&dev);
+// #endif
 
 #if 0
 	while (1) {

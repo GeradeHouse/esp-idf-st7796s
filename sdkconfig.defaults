@@ -6,6 +6,6 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 
 #
-# ESP32S3-specific
+# Sets the default CPU frequency in MHz, where n means the frequency in MHz.
 #
-CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ=240
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240

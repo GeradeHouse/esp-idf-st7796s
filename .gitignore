@@ -1,0 +1,67 @@
+# Build artifacts
+build/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+*.a
+*.lib
+
+# Backup and temporary files
+*.log
+debug.log
+sdkconfig
+sdkconfig.old
+*~
+*.tmp
+
+# IDE specific files
+.history/
+.lh/
+.vscode/
+.venv/
+*.code-workspace
+
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS and Windows system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Generated scripts
+BuildAndFlash.ps1
+CleanBuildEnvironment.ps1
+ReconfigureBuildAndFlash.ps1
+dependencies.lock
+
+# Ignore notebooks if not needed
+notebook.ipynb
+
+# Ignore main component's build artifacts
+main/*.o
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Ignore partitions generated during build
+partitions.csv

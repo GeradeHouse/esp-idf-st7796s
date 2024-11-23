@@ -519,7 +519,7 @@
     "IDF_TARGET_ARCH_XTENSA": true,
     "IDF_TARGET_ESP32S3": true,
     "IDF_TOOLCHAIN": "gcc",
-    "INVERSION": true,
+    "INVERSION": false,
     "LCD_ENABLE_DEBUG_LOG": false,
     "LCD_PANEL_IO_FORMAT_BUF_SIZE": 32,
     "LCD_RGB_ISR_IRAM_SAFE": false,
