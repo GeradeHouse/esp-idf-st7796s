@@ -1,0 +1,18 @@
+{
+    "sourceFile": "main/decode_png.c",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1732333330939,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1732333330939,
+            "name": "Commit-0",
+            "content": "#include <stdio.h>\r\n#include <inttypes.h>\r\n#include \"decode_png.h\"\r\n#include \"pngle.h\"\r\n#include \"esp_log.h\"\r\n\r\nvoid png_init(pngle_t *pngle, uint32_t w, uint32_t h)\r\n{\r\n\tESP_LOGD(__FUNCTION__, \"png_init w=%\"PRIu32\" h=%\"PRIu32, w, h);\r\n\tESP_LOGD(__FUNCTION__, \"screenWidth=%d screenHeight=%d\", pngle->screenWidth, pngle->screenHeight);\r\n\tpngle->imageWidth = w;\r\n\tpngle->imageHeight = h;\r\n\tpngle->reduction = false;\r\n\tpngle->scale_factor = 1.0;\r\n\r\n\t// Calculate Reduction\r\n\tif (pngle->screenWidth < pngle->imageWidth || pngle->screenHeight < pngle->imageHeight) {\r\n\t\tpngle->reduction = true;\r\n\t\tdouble factorWidth = (double)pngle->screenWidth / (double)pngle->imageWidth;\r\n\t\tdouble factorHeight = (double)pngle->screenHeight / (double)pngle->imageHeight;\r\n\t\tpngle->scale_factor = factorWidth;\r\n\t\tif (factorHeight < factorWidth) pngle->scale_factor = factorHeight;\r\n\t\tpngle->imageWidth = pngle->imageWidth * pngle->scale_factor;\r\n\t\tpngle->imageHeight = pngle->imageHeight * pngle->scale_factor;\r\n\t}\r\n\tESP_LOGD(__FUNCTION__, \"reduction=%d scale_factor=%f\", pngle->reduction, pngle->scale_factor);\r\n\tESP_LOGD(__FUNCTION__, \"imageWidth=%d imageHeight=%d\", pngle->imageWidth, pngle->imageHeight);\r\n\t\t\r\n}\r\n\r\n#define rgb565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))\r\n\r\nvoid png_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t rgba[4])\r\n{\r\n\t// ESP_LOGD(__FUNCTION__, \"png_draw x=%\"PRIu32\" y=%\"PRIu32\" w=%\"PRIu32\" h=%\"PRIu32, x,y,w,h);\r\n#if 0\r\n\tuint8_t r = rgba[0];\r\n\tuint8_t g = rgba[1];\r\n\tuint8_t b = rgba[2];\r\n#endif\r\n\r\n\t// image reduction\r\n\tuint32_t _x = x;\r\n\tuint32_t _y = y;\r\n\tif (pngle->reduction) {\r\n\t\t_x = x * pngle->scale_factor;\r\n\t\t_y = y * pngle->scale_factor;\r\n\t}\r\n\tif (_y < pngle->screenHeight && _x < pngle->screenWidth) {\r\n#if 0\r\n\t\tpngle->pixels[_y][_x].red = rgba[0];\r\n\t\tpngle->pixels[_y][_x].green = rgba[1];\r\n\t\tpngle->pixels[_y][_x].blue = rgba[2];\r\n#endif\r\n\t\tpngle->pixels[_y][_x] = rgb565(rgba[0], rgba[1], rgba[2]);\r\n\t}\r\n\r\n}\r\n\r\nvoid png_finish(pngle_t *pngle) {\r\n\tESP_LOGD(__FUNCTION__, \"png_finish\");\r\n}\r\n"
+        }
+    ]
+}

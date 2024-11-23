@@ -1,0 +1,108 @@
+menu "ST7789 Configuration"
+
+    config GPIO_RANGE_MAX
+        int
+        default 48
+
+    config WIDTH
+        int "SCREEN WIDTH"
+        range 0 999
+        default 240
+        help
+            The width resolution of the screen.
+
+    config HEIGHT
+        int "SCREEN HEIGHT"
+        range 0 999
+        default 240
+        help
+            The height resolution of the screen.
+
+    config OFFSETX
+        int "GRAM X OFFSET"
+        range 0 99
+        default 0
+        help
+            When your TFT has an offset (X), set it.
+
+    config OFFSETY
+        int "GRAM Y OFFSET"
+        range 0 99
+        default 0
+        help
+            When your TFT has an offset (Y), set it.
+
+    config MOSI_GPIO
+        int "MOSI GPIO number"
+        range 0 GPIO_RANGE_MAX
+        default 35
+        help
+            GPIO number (IOxx) to SPI MOSI.
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as MOSI.
+
+    config SCLK_GPIO
+        int "SCLK GPIO number"
+        range 0 GPIO_RANGE_MAX
+        default 36
+        help
+            GPIO number (IOxx) to SPI SCLK.
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as SCLK.
+
+    config CS_GPIO
+        int "CS GPIO number"
+        range -1 GPIO_RANGE_MAX
+        default -1
+        help
+            GPIO number (IOxx) to SPI CS.
+            When it is -1, CS isn't performed.
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as CS.
+
+    config DC_GPIO
+        int "DC GPIO number"
+        range 0 GPIO_RANGE_MAX
+        default 40
+        help
+            GPIO number (IOxx) to SPI DC.
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as DC.
+
+    config RESET_GPIO
+        int "RESET GPIO number"
+        range 0 GPIO_RANGE_MAX
+        default 41
+        help
+            GPIO number (IOxx) to RESET.
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as RESET.
+
+    config BL_GPIO
+        int "BACKLIGHT GPIO number"
+        range -1 GPIO_RANGE_MAX
+        default 33
+        help
+            GPIO number (IOxx) to BACKLIGHT.
+            When it is -1, BACKLIGHT isn't performed.
+            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as BACKLIGHT.
+
+    config INVERSION
+        bool "Enable Display Inversion"
+        default false
+        help
+            Enable Display Inversion.
+
+    choice SPI_HOST
+        prompt "SPI peripheral that controls this bus"
+        default SPI2_HOST
+        help
+            Select SPI peripheral that controls this bus.
+
+        config SPI2_HOST
+            bool "SPI2_HOST"
+            help
+                Use SPI2_HOST. This is also called HSPI_HOST.
+
+        config SPI3_HOST
+            bool "SPI3_HOST"
+            help
+                Use SPI3_HOST. This is also called VSPI_HOST.
+    endchoice
+
+endmenu

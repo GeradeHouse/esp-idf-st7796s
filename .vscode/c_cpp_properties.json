@@ -1,0 +1,32 @@
+{
+    "configurations": [
+        {
+            "name": "ESP-IDF",
+            "compilerPath": "${config:idf.toolsPathWin}\\tools\\xtensa-esp-elf\\esp-13.2.0_20240530\\xtensa-esp-elf\\bin\\xtensa-esp32s3-elf-gcc.exe",
+            "compileCommands": "${config:idf.buildPath}/compile_commands.json",
+            "includePath": [
+                "${config:idf.espIdfPath}/components/**",
+                "${config:idf.espIdfPathWin}/components/**",
+                "${workspaceFolder}/**",
+                "${config:idf.espIdfPath}/components/freertos/include",
+                "${config:idf.espIdfPath}/components/driver/include",
+                "${config:idf.espIdfPath}/components/esp_common/include",
+                "${config:idf.espIdfPath}/components/esp_system/include",
+                "${config:idf.espIdfPath}/components/esp_rom/include",
+                "${config:idf.espIdfPath}/components/spi_flash/include",
+                "${config:idf.espIdfPath}/components/esp_log/include",
+                "${config:idf.espIdfPath}/components/esp_vfs/include",
+                "${config:idf.espIdfPath}/components/esp_spiffs/include"
+            ],
+            "browse": {
+                "path": [
+                    "${config:idf.espIdfPath}/components",
+                    "${config:idf.espIdfPathWin}/components",
+                    "${workspaceFolder}"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ],
+    "version": 4
+}

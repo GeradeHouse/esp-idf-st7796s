@@ -1,0 +1,18 @@
+{
+    "sourceFile": "esp-idf-st7796s.code-workspace",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1732323075701,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1732323075701,
+            "name": "Commit-0",
+            "content": "{\n\t\"folders\": [\n\t\t{\n\t\t\t\"path\": \".\"\n\t\t}\n\t],\n    \"settings\": {\n        \"files.associations\": {\n            \"bmpfile.h\": \"c\",\n            \"pngle.h\": \"c\"\n        }\n    }\n}\n"
+        }
+    ]
+}

@@ -1,0 +1,26 @@
+{
+    "sourceFile": "main/esp-idf-st7789.code-workspace",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 2,
+            "patches": [
+                {
+                    "date": 1731797690873,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1731797692010,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -5,8 +5,8 @@\n         }\r\n     ],\r\n     \"settings\": {\r\n         \"files.associations\": {\r\n-            \"fontx.h\": \"c\"\r\n+            \"bmpfile.h\": \"c\"\r\n         }\r\n     }\r\n }\n\\ No newline at end of file\n"
+                },
+                {
+                    "date": 1731797762592,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -5,8 +5,9 @@\n         }\r\n     ],\r\n     \"settings\": {\r\n         \"files.associations\": {\r\n-            \"bmpfile.h\": \"c\"\r\n+            \"bmpfile.h\": \"c\",\r\n+            \"pngle.h\": \"c\"\r\n         }\r\n     }\r\n }\n\\ No newline at end of file\n"
+                }
+            ],
+            "date": 1731797690873,
+            "name": "Commit-0",
+            "content": "{\r\n    \"folders\": [\r\n        {\r\n            \"path\": \"..\"\r\n        }\r\n    ],\r\n    \"settings\": {\r\n        \"files.associations\": {\r\n            \"fontx.h\": \"c\"\r\n        }\r\n    }\r\n}"
+        }
+    ]
+}

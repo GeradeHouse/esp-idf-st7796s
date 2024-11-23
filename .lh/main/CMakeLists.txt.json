@@ -1,0 +1,38 @@
+{
+    "sourceFile": "main/CMakeLists.txt",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 5,
+            "patches": [
+                {
+                    "date": 1731792410428,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1731792415727,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -14,6 +14,16 @@\n if(IDF_TARGET STREQUAL \"esp32c3\")\r\n     list(APPEND srcs \"decode_jpeg.c\")\r\n endif()\r\n \r\n-idf_component_register(SRCS ${srcs}\r\n-                    INCLUDE_DIRS \".\")\r\n+# Register the main component\r\n+idf_component_register(\r\n+    SRCS ${ALL_C_SOURCES}\r\n+    INCLUDE_DIRS \".\"\r\n+                 \"../include\" # Include additional directories if needed\r\n+    REQUIRES driver\r\n+             freertos\r\n+             esp_system\r\n+             esp_vfs\r\n+             esp_spiffs\r\n+    PRIV_REQUIRES esp_timer\r\n+)\r\n"
+                },
+                {
+                    "date": 1731792421022,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -14,8 +14,11 @@\n if(IDF_TARGET STREQUAL \"esp32c3\")\r\n     list(APPEND srcs \"decode_jpeg.c\")\r\n endif()\r\n \r\n+idf_component_register(SRCS ${srcs}\r\n+                    INCLUDE_DIRS \".\")\r\n+\r\n # Register the main component\r\n idf_component_register(\r\n     SRCS ${ALL_C_SOURCES}\r\n     INCLUDE_DIRS \".\"\r\n@@ -25,5 +28,5 @@\n              esp_system\r\n              esp_vfs\r\n              esp_spiffs\r\n     PRIV_REQUIRES esp_timer\r\n-)\r\n+)\n\\ No newline at end of file\n"
+                },
+                {
+                    "date": 1731792438191,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -15,9 +15,10 @@\n     list(APPEND srcs \"decode_jpeg.c\")\r\n endif()\r\n \r\n idf_component_register(SRCS ${srcs}\r\n-                    INCLUDE_DIRS \".\")\r\n+                    INCLUDE_DIRS \".\"\r\n+                    \r\n \r\n # Register the main component\r\n idf_component_register(\r\n     SRCS ${ALL_C_SOURCES}\r\n"
+                },
+                {
+                    "date": 1731792443796,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -16,8 +16,13 @@\n endif()\r\n \r\n idf_component_register(SRCS ${srcs}\r\n                     INCLUDE_DIRS \".\"\r\n+                    REQUIRES driver\r\n+                             freertos\r\n+                             esp_system\r\n+                             esp_vfs\r\n+                             esp_spiffs\r\n \r\n # Register the main component\r\n idf_component_register(\r\n     SRCS ${ALL_C_SOURCES}\r\n"
+                },
+                {
+                    "date": 1731792466100,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -5,9 +5,8 @@\n     \"pngle.c\"\r\n     )\r\n \r\n \r\n-\r\n if(IDF_TARGET STREQUAL \"esp32s3\")\r\n     list(APPEND srcs \"decode_jpeg.c\")\r\n endif()\r\n \r\n"
+                }
+            ],
+            "date": 1731792410428,
+            "name": "Commit-0",
+            "content": "set(srcs \"main.c\"\r\n    \"st7789.c\"\r\n    \"fontx.c\"\r\n    \"decode_png.c\"\r\n    \"pngle.c\"\r\n    )\r\n\r\n\r\n\r\nif(IDF_TARGET STREQUAL \"esp32s3\")\r\n    list(APPEND srcs \"decode_jpeg.c\")\r\nendif()\r\n\r\nif(IDF_TARGET STREQUAL \"esp32c3\")\r\n    list(APPEND srcs \"decode_jpeg.c\")\r\nendif()\r\n\r\nidf_component_register(SRCS ${srcs}\r\n                    INCLUDE_DIRS \".\")\r\n"
+        }
+    ]
+}

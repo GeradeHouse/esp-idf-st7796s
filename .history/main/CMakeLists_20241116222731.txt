@@ -1,0 +1,39 @@
+set(srcs "main.c"
+    "st7789.c"
+    "fontx.c"
+    "decode_png.c"
+    "pngle.c"
+    )
+
+
+
+if(IDF_TARGET STREQUAL "esp32s3")
+    list(APPEND srcs "decode_jpeg.c")
+endif()
+
+if(IDF_TARGET STREQUAL "esp32c3")
+    list(APPEND srcs "decode_jpeg.c")
+endif()
+
+idf_component_register(SRCS ${srcs}
+                    INCLUDE_DIRS "."
+                    REQUIRES driver
+                             freertos
+                             esp_system
+                             esp_vfs
+                             esp_spiffs
+                    PRIV_REQUIRES esp_timer
+                    
+
+# Register the main component
+idf_component_register(
+    SRCS ${ALL_C_SOURCES}
+    INCLUDE_DIRS "."
+                 "../include" # Include additional directories if needed
+    REQUIRES driver
+             freertos
+             esp_system
+             esp_vfs
+             esp_spiffs
+    PRIV_REQUIRES esp_timer
+)

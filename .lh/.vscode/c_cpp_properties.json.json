@@ -1,0 +1,26 @@
+{
+    "sourceFile": ".vscode/c_cpp_properties.json",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 2,
+            "patches": [
+                {
+                    "date": 1731791692915,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1731792134635,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -6,18 +6,9 @@\n             \"compileCommands\": \"${config:idf.buildPath}/compile_commands.json\",\n             \"includePath\": [\n                 \"${config:idf.espIdfPath}/components/**\",\n                 \"${config:idf.espIdfPathWin}/components/**\",\n-                \"${workspaceFolder}/**\",\n-                \"${config:idf.espIdfPath}/components/freertos/include\",\n-                \"${config:idf.espIdfPath}/components/driver/include\",\n-                \"${config:idf.espIdfPath}/components/esp_common/include\",\n-                \"${config:idf.espIdfPath}/components/esp_system/include\",\n-                \"${config:idf.espIdfPath}/components/esp_rom/include\",\n-                \"${config:idf.espIdfPath}/components/spi_flash/include\",\n-                \"${config:idf.espIdfPath}/components/esp_log/include\",\n-                \"${config:idf.espIdfPath}/components/esp_vfs/include\",\n-                \"${config:idf.espIdfPath}/components/esp_spiffs/include\"\n+                \"${workspaceFolder}/**\"\n             ],\n             \"browse\": {\n                 \"path\": [\n                     \"${config:idf.espIdfPath}/components\",\n"
+                },
+                {
+                    "date": 1731792143540,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -6,9 +6,18 @@\n             \"compileCommands\": \"${config:idf.buildPath}/compile_commands.json\",\n             \"includePath\": [\n                 \"${config:idf.espIdfPath}/components/**\",\n                 \"${config:idf.espIdfPathWin}/components/**\",\n-                \"${workspaceFolder}/**\"\n+                \"${workspaceFolder}/**\",\n+                \"${config:idf.espIdfPath}/components/freertos/include\",\n+                \"${config:idf.espIdfPath}/components/driver/include\",\n+                \"${config:idf.espIdfPath}/components/esp_common/include\",\n+                \"${config:idf.espIdfPath}/components/esp_system/include\",\n+                \"${config:idf.espIdfPath}/components/esp_rom/include\",\n+                \"${config:idf.espIdfPath}/components/spi_flash/include\",\n+                \"${config:idf.espIdfPath}/components/esp_log/include\",\n+                \"${config:idf.espIdfPath}/components/esp_vfs/include\",\n+                \"${config:idf.espIdfPath}/components/esp_spiffs/include\"\n             ],\n             \"browse\": {\n                 \"path\": [\n                     \"${config:idf.espIdfPath}/components\",\n"
+                }
+            ],
+            "date": 1731791692915,
+            "name": "Commit-0",
+            "content": "{\n    \"configurations\": [\n        {\n            \"name\": \"ESP-IDF\",\n            \"compilerPath\": \"${config:idf.toolsPathWin}\\\\tools\\\\xtensa-esp-elf\\\\esp-13.2.0_20240530\\\\xtensa-esp-elf\\\\bin\\\\xtensa-esp32s3-elf-gcc.exe\",\n            \"compileCommands\": \"${config:idf.buildPath}/compile_commands.json\",\n            \"includePath\": [\n                \"${config:idf.espIdfPath}/components/**\",\n                \"${config:idf.espIdfPathWin}/components/**\",\n                \"${workspaceFolder}/**\",\n                \"${config:idf.espIdfPath}/components/freertos/include\",\n                \"${config:idf.espIdfPath}/components/driver/include\",\n                \"${config:idf.espIdfPath}/components/esp_common/include\",\n                \"${config:idf.espIdfPath}/components/esp_system/include\",\n                \"${config:idf.espIdfPath}/components/esp_rom/include\",\n                \"${config:idf.espIdfPath}/components/spi_flash/include\",\n                \"${config:idf.espIdfPath}/components/esp_log/include\",\n                \"${config:idf.espIdfPath}/components/esp_vfs/include\",\n                \"${config:idf.espIdfPath}/components/esp_spiffs/include\"\n            ],\n            \"browse\": {\n                \"path\": [\n                    \"${config:idf.espIdfPath}/components\",\n                    \"${config:idf.espIdfPathWin}/components\",\n                    \"${workspaceFolder}\"\n                ],\n                \"limitSymbolsToIncludedHeaders\": true\n            }\n        }\n    ],\n    \"version\": 4\n}\n"
+        }
+    ]
+}

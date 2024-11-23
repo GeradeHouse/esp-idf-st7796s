@@ -1,0 +1,24 @@
+# Define the list of source files
+set(srcs "main.c"
+         "st7789.c"
+         "fontx.c"
+         "decode_png.c"
+         "pngle.c"
+         )
+
+# Conditionally include decode_jpeg.c for the ESP32-S3 target
+if(IDF_TARGET STREQUAL "esp32s3")
+    list(APPEND srcs "decode_jpeg.c")
+endif()
+
+# Register the component and its dependencies
+idf_component_register(
+    SRCS ${srcs}                  # Source files
+    INCLUDE_DIRS "."              # Include current directory for headers
+    REQUIRES driver               # Public dependencies
+             freertos
+             esp_system
+             esp_vfs
+             esp_spiffs
+    PRIV_REQUIRES esp_timer       # Private dependencies
+)

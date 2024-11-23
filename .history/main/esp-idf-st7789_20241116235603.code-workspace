@@ -1,0 +1,13 @@
+{
+    "folders": [
+        {
+            "path": ".."
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "bmpfile.h": "c",
+            "pngle.h": "c"
+        }
+    }
+}

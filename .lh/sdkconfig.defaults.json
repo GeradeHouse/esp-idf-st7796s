@@ -1,0 +1,18 @@
+{
+    "sourceFile": "sdkconfig.defaults",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1731785793240,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1731785793240,
+            "name": "Commit-0",
+            "content": "#\r\n# Partition Table\r\n#\r\nCONFIG_PARTITION_TABLE_CUSTOM=y\r\nCONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions.csv\"\r\nCONFIG_PARTITION_TABLE_FILENAME=\"partitions.csv\"\r\n\r\n#\r\n# ESP32S3-specific\r\n#\r\nCONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ=240\r\n"
+        }
+    ]
+}

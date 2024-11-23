@@ -1,0 +1,29 @@
+[0;33m--- Warning: GDB cannot open serial ports accessed as COMx[0m
+[0;33m--- Using \\.\COM5 instead...[0m
+[0;33m--- esp-idf-monitor 1.5.0 on \\.\COM5 115200[0m
+[0;33m--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H[0m
+[0;33m--- 0x42016707: task_wdt_timeout_handling at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/esp_system/task_wdt/task_wdt.c:434
+0x42016b24: task_wdt_isr at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/esp_system/task_wdt/task_wdt.c:507
+0x403773d9: _xt_lowint1 at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/xtensa/xtensa_vectors.S:1240
+0x40377b61: spi_flash_disable_interrupts_caches_and_other_cpu at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spi_flash/cache_utils.c:206
+0x40378933: cache_disable at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spi_flash/spi_flash_os_func_app.c:70
+0x4037893d: spi1_start at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spi_flash/spi_flash_os_func_app.c:122
+0x40379a4b: spiflash_start_default at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spi_flash/esp_flash_api.c:188
+0x40378391: esp_flash_read at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spi_flash/esp_flash_api.c:888
+0x42015676: esp_partition_read at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/esp_partition/partition_target.c:38
+0x4200f50b: spiffs_api_read at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spiffs/spiffs_api.c:27
+0x42012ff7: spiffs_phys_rd at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spiffs/spiffs/src/spiffs_cache.c:161
+0x42010ce1: spiffs_obj_lu_find_entry_visitor at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spiffs/spiffs/src/spiffs_nucleus.c:166
+0x42011117: spiffs_obj_lu_find_id_and_span at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spiffs/spiffs/src/spiffs_nucleus.c:537 (discriminator 4)
+0x4200ffc4: SPIFFS_lseek at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spiffs/spiffs/src/spiffs_hydrogen.c:636
+0x4200f342: vfs_spiffs_lseek at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/spiffs/esp_spiffs.c:591
+0x42008f6b: esp_vfs_lseek at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/vfs/vfs.c:515 (discriminator 3)
+0x4201c3c5: __sseek at /builds/idf/crosstool-NG/.build/HOST-x86_64-w64-mingw32/xtensa-esp-elf/src/newlib/newlib/libc/stdio/stdio.c:113
+0x4201c6e5: _fseeko_r at /builds/idf/crosstool-NG/.build/HOST-x86_64-w64-mingw32/xtensa-esp-elf/src/newlib/newlib/libc/stdio/fseeko.c:307
+0x4201bdee: _fseek_r at /builds/idf/crosstool-NG/.build/HOST-x86_64-w64-mingw32/xtensa-esp-elf/src/newlib/newlib/libc/stdio/fseek.c:89
+ (inlined by) fseek at /builds/idf/crosstool-NG/.build/HOST-x86_64-w64-mingw32/xtensa-esp-elf/src/newlib/newlib/libc/stdio/fseek.c:99
+0x4200a8ba: BMPTest at C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/main/main.c:614
+0x4200b4d6: st7796s_task at C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/main/main.c:1135
+0x4037c0b9: vPortTaskWrapper at C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c:134
+[0m
+[0m
