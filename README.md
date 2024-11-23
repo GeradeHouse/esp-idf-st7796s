@@ -4,7 +4,7 @@
 Now it's tweaked for the **ST7796S driver** and a **3.5" 320x480 SPI TFT display**.  
 Bought it from **Tenstar-robo** on [AliExpress](https://www.aliexpress.com/item/1005006175220737.html?spm=a2g0o.order_list.order_list_main.17.3b5a79d25UYdwH&gatewayAdapt=glo2nld). Not affiliated, just got it from them!
 
-![TENSTAR-ROBO-3-5-Inch-320x480-SPI-TFT-Serial-Port-st7796s](https://github.com/user-attachments/assets/e07b3f21-89fd-4e79-a575-1faa8dbaab0b)
+![TENSTAR-ROBO-3-5-Inch-320x480-SPI-TFT-OLED-ST7796S](https://github.com/user-attachments/assets/58d51f1c-37f0-456b-81df-d5ce60b1cb75)
 
 ## 🚀 Current Status & Roadmap:
 
