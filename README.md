@@ -1,3 +1,31 @@
+# esp-idf-st7796s
+
+🚨 **Forked from the ST7789 repo** 🚨  
+Now it's tweaked for the **ST7796S driver** and a **3.5" 320x480 SPI TFT display**.  
+Bought it from **Tenstar-robo** on [AliExpress](https://www.aliexpress.com/item/1005006175220737.html?spm=a2g0o.order_list.order_list_main.17.3b5a79d25UYdwH&gatewayAdapt=glo2nld). Not affiliated, just got it from them!
+
+![TENSTAR-ROBO-3-5-Inch-320x480-SPI-TFT-Serial-Port-st7796s](https://github.com/user-attachments/assets/e07b3f21-89fd-4e79-a575-1faa8dbaab0b)
+
+## 🚀 Current Status & Roadmap:
+
+### 🔥 Known Bugs:  
+Still ironing out some quirks. Got a few things to fix.
+
+### 🎯 Future Plans:  
+- GIF playback is coming soon.  
+- Layered rendering system to handle multiple elements independently, coming next.
+
+💥 **Contributions?** I'm open to PRs!
+
+🏷️ Modified by **GeradeHouse**
+
+---
+
+# Original README Below  
+_The following documentation is from the original repository:_  
+
+---
+
 # esp-idf-st7789
 ST7789 Driver for esp-idf
 
