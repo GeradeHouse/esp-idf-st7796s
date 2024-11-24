@@ -23,6 +23,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <math.h>
+#include <stdlib.h>  // Add this include for strtof
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -32,6 +33,7 @@
 #include "esp_log.h"
 
 #include "st7796s.h"  // Updated to the correct header file
+#include "sdkconfig.h" // Include configuration header
 
 #define TAG "ST7796S"
 #define _DEBUG_ 0
@@ -40,18 +42,74 @@
 #define HOST_ID SPI2_HOST
 #elif CONFIG_SPI3_HOST
 #define HOST_ID SPI3_HOST
+#else
+#define HOST_ID SPI2_HOST // Default to SPI2_HOST if not defined
 #endif
 
 static const int SPI_Command_Mode = 0;
 static const int SPI_Data_Mode = 1;
 static const int SPI_Frequency = SPI_MASTER_FREQ_40M;
 
-// Initialize the LCD display with specified dimensions and offsets
-// Define orientation constants for the display
-#define ORIENTATION_LANDSCAPE 0x48 // Landscape orientation
-#define ORIENTATION_PORTRAIT  0x28 // Portrait orientation
-// Add other orientation values as needed (e.g., inverted landscape, inverted portrait, etc.)
+// Initialize ColorTweaks with values from menuconfig
+ColorTweaks color_tweaks = {
+    .shadows_cyan_red = CONFIG_SHADOWS_CYAN_RED,
+    .shadows_magenta_green = CONFIG_SHADOWS_MAGENTA_GREEN,
+    .shadows_yellow_blue = CONFIG_SHADOWS_YELLOW_BLUE,
 
+    .midtones_cyan_red = CONFIG_MIDTONES_CYAN_RED,
+    .midtones_magenta_green = CONFIG_MIDTONES_MAGENTA_GREEN,
+    .midtones_yellow_blue = CONFIG_MIDTONES_YELLOW_BLUE,
+
+    .highlights_cyan_red = CONFIG_HIGHLIGHTS_CYAN_RED,
+    .highlights_magenta_green = CONFIG_HIGHLIGHTS_MAGENTA_GREEN,
+    .highlights_yellow_blue = CONFIG_HIGHLIGHTS_YELLOW_BLUE,
+};
+
+// Declare static variables for gamma correction
+static float gamma_red = 2.2f;
+static float gamma_green = 2.2f;
+static float gamma_blue = 2.2f;
+
+// Declare static variables for brightness and contrast
+static int brightness_percent = 0;
+static int contrast_percent = 0;
+
+// Function to initialize gamma correction values
+void init_gamma_values(void) {
+    // Parse gamma correction values from configuration with sanity checks
+    gamma_red = strtof(CONFIG_GAMMA_R, NULL);
+    if (gamma_red < 1.0f || gamma_red > 4.0f) {
+        ESP_LOGW(TAG, "Invalid GAMMA_R value '%s'; using default 2.2", CONFIG_GAMMA_R);
+        gamma_red = 2.2f;
+    }
+
+    gamma_green = strtof(CONFIG_GAMMA_G, NULL);
+    if (gamma_green < 1.0f || gamma_green > 4.0f) {
+        ESP_LOGW(TAG, "Invalid GAMMA_G value '%s'; using default 2.2", CONFIG_GAMMA_G);
+        gamma_green = 2.2f;
+    }
+
+    gamma_blue = strtof(CONFIG_GAMMA_B, NULL);
+    if (gamma_blue < 1.0f || gamma_blue > 4.0f) {
+        ESP_LOGW(TAG, "Invalid GAMMA_B value '%s'; using default 2.2", CONFIG_GAMMA_B);
+        gamma_blue = 2.2f;
+    }
+}
+
+// Function to initialize brightness and contrast values
+void init_brightness_contrast_values(void) {
+    brightness_percent = CONFIG_BRIGHTNESS;
+    if (brightness_percent < -100 || brightness_percent > 100) {
+        ESP_LOGW(TAG, "Invalid BRIGHTNESS value '%d'; using default 0", brightness_percent);
+        brightness_percent = 0;
+    }
+
+    contrast_percent = CONFIG_CONTRAST;
+    if (contrast_percent < -100 || contrast_percent > 100) {
+        ESP_LOGW(TAG, "Invalid CONTRAST value '%d'; using default 0", contrast_percent);
+        contrast_percent = 0;
+    }
+}
 
 void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t GPIO_CS,
                      int16_t GPIO_DC, int16_t GPIO_RESET, int16_t GPIO_BL) {
@@ -122,18 +180,18 @@ void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t G
     // Store GPIO numbers and SPI handle in device structure
     dev->_dc = GPIO_DC;
     dev->_bl = GPIO_BL;
+    dev->_reset = GPIO_RESET;
     dev->_SPIHandle = handle;
 
     // Initialize Backlight pin AFTER SPI initialization
     ESP_LOGI(TAG, "GPIO_BL=%d", GPIO_BL);
-    if (GPIO_BL >= 1) {
+    if (GPIO_BL >= 0) {
         gpio_reset_pin(GPIO_BL);
         gpio_set_direction(GPIO_BL, GPIO_MODE_OUTPUT);
-        gpio_set_level(GPIO_BL, 0);  // Set GPIO_BL high to turn on the backlight
-        ESP_LOGI(TAG, "Backlight enabled on GPIO_BL=%d", GPIO_BL);
+        gpio_set_level(GPIO_BL, 0);  // Set GPIO_BL low initially
+        ESP_LOGI(TAG, "Backlight pin initialized on GPIO_BL=%d", GPIO_BL);
     }
 }
-
 
 bool spi_master_write_byte(spi_device_handle_t SPIHandle, const uint8_t *Data, size_t DataLength) {
     spi_transaction_t SPITransaction;
@@ -144,7 +202,10 @@ bool spi_master_write_byte(spi_device_handle_t SPIHandle, const uint8_t *Data, s
         SPITransaction.length = DataLength * 8;
         SPITransaction.tx_buffer = Data;
         ret = spi_device_polling_transmit(SPIHandle, &SPITransaction);
-        assert(ret == ESP_OK);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "spi_device_polling_transmit failed: %s", esp_err_to_name(ret));
+            return false;
+        }
     }
 
     return true;
@@ -193,7 +254,10 @@ bool spi_master_write_color(TFT_t *dev, uint16_t color, uint32_t size) {
             Byte[i * 2 + 1] = color & 0xFF;
         }
         gpio_set_level(dev->_dc, SPI_Data_Mode);
-        spi_master_write_byte(dev->_SPIHandle, Byte, chunk_size);
+        if (!spi_master_write_byte(dev->_SPIHandle, Byte, chunk_size)) {
+            ESP_LOGE(TAG, "spi_master_write_color failed during data transmission");
+            return false;
+        }
         len -= chunk_size;
     }
     return true;
@@ -215,7 +279,10 @@ bool spi_master_write_colors(TFT_t *dev, uint16_t *colors, uint16_t size) {
             index++;
         }
         gpio_set_level(dev->_dc, SPI_Data_Mode);
-        spi_master_write_byte(dev->_SPIHandle, Byte, chunk_size);
+        if (!spi_master_write_byte(dev->_SPIHandle, Byte, chunk_size)) {
+            ESP_LOGE(TAG, "spi_master_write_colors failed during data transmission");
+            return false;
+        }
         len -= chunk_size;
     }
     return true;
@@ -224,7 +291,6 @@ bool spi_master_write_colors(TFT_t *dev, uint16_t *colors, uint16_t size) {
 void delayMS(int ms) {
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
-
 
 // Initialize the LCD display with specified dimensions, offsets, and orientation
 void lcdInit(TFT_t *dev, int width, int height, int offsetx, int offsety, uint8_t orientation) {
@@ -252,6 +318,12 @@ void lcdInit(TFT_t *dev, int width, int height, int offsetx, int offsety, uint8_
     ESP_LOGI(TAG, "Sending Software Reset");
     spi_master_write_command(dev, 0x01); // Send the Software Reset command (0x01)
     delayMS(150);                        // Wait for 150 milliseconds for the reset process to complete
+
+    // Initialize gamma correction values
+    init_gamma_values();
+
+    // Initialize brightness and contrast values
+    init_brightness_contrast_values();
 
     // Exit sleep mode to turn on the display
     ESP_LOGI(TAG, "Exiting Sleep Mode");
@@ -323,57 +395,55 @@ void lcdInit(TFT_t *dev, int width, int height, int offsetx, int offsety, uint8_
     spi_master_write_data_byte(dev, 0xA1);  // Set default power control setting (second parameter)
     delayMS(10);                            // Wait for 10 milliseconds after setting power control
 
-    // Set positive voltage gamma control for color adjustment (gamma curve)
+    // Setting Positive Voltage Gamma Control
     ESP_LOGI(TAG, "Setting Positive Voltage Gamma Control");
-    spi_master_write_command(dev, 0xE0);    // Send the Positive Gamma Control command (0xE0)
-    // Write gamma curve settings for positive voltages (adjust as needed for color calibration)
+    spi_master_write_command(dev, 0xE0);    // Positive Gamma Control
     uint8_t positive_gamma[] = {
-        0xD0, // Gamma correction parameter 1
-        0x08, // Gamma correction parameter 2
-        0x11, // Gamma correction parameter 3
-        0x08, // Gamma correction parameter 4
-        0x0C, // Gamma correction parameter 5
-        0x15, // Gamma correction parameter 6
-        0x39, // Gamma correction parameter 7
-        0x33, // Gamma correction parameter 8
-        0x50, // Gamma correction parameter 9
-        0x36, // Gamma correction parameter 10
-        0x13, // Gamma correction parameter 11
-        0x14, // Gamma correction parameter 12
-        0x29, // Gamma correction parameter 13
-        0x2D  // Gamma correction parameter 14
+        0xCF, // Parameter 1 (decreased by 1)
+        0x07, // Parameter 2 (decreased by 1)
+        0x10, // Parameter 3 (decreased by 1)
+        0x07, // Parameter 4 (decreased by 1)
+        0x0B, // Parameter 5 (decreased by 1)
+        0x14, // Parameter 6 (decreased by 1)
+        0x38, // Parameter 7 (decreased by 1)
+        0x32, // Parameter 8 (decreased by 1)
+        0x4F, // Parameter 9 (decreased by 1)
+        0x35, // Parameter 10 (decreased by 1)
+        0x12, // Parameter 11 (decreased by 1)
+        0x13, // Parameter 12 (decreased by 1)
+        0x28, // Parameter 13 (decreased by 1)
+        0x2C  // Parameter 14 (decreased by 1)
     };
     for (int i = 0; i < sizeof(positive_gamma); i++) {
-        spi_master_write_data_byte(dev, positive_gamma[i]); // Write each gamma setting
+        spi_master_write_data_byte(dev, positive_gamma[i]);
     }
-    delayMS(10);                            // Wait for 10 milliseconds after setting positive gamma
+    delayMS(10);
 
-    // Set negative voltage gamma control for color adjustment (gamma curve)
+    // Setting Negative Voltage Gamma Control
     ESP_LOGI(TAG, "Setting Negative Voltage Gamma Control");
-    spi_master_write_command(dev, 0xE1);    // Send the Negative Gamma Control command (0xE1)
-    // Write gamma curve settings for negative voltages (adjust as needed for color calibration)
+    spi_master_write_command(dev, 0xE1);    // Negative Gamma Control
     uint8_t negative_gamma[] = {
-        0xD0, // Gamma correction parameter 1
-        0x08, // Gamma correction parameter 2
-        0x10, // Gamma correction parameter 3
-        0x08, // Gamma correction parameter 4
-        0x06, // Gamma correction parameter 5
-        0x06, // Gamma correction parameter 6
-        0x39, // Gamma correction parameter 7
-        0x44, // Gamma correction parameter 8
-        0x51, // Gamma correction parameter 9
-        0x0B, // Gamma correction parameter 10
-        0x16, // Gamma correction parameter 11
-        0x14, // Gamma correction parameter 12
-        0x2F, // Gamma correction parameter 13
-        0x31  // Gamma correction parameter 14
+        0xCF, // Parameter 1 (decreased by 1)
+        0x07, // Parameter 2 (decreased by 1)
+        0x0F, // Parameter 3 (decreased by 1)
+        0x07, // Parameter 4 (decreased by 1)
+        0x05, // Parameter 5 (decreased by 1)
+        0x05, // Parameter 6 (decreased by 1)
+        0x38, // Parameter 7 (decreased by 1)
+        0x43, // Parameter 8 (decreased by 1)
+        0x50, // Parameter 9 (decreased by 1)
+        0x0A, // Parameter 10 (decreased by 1)
+        0x15, // Parameter 11 (decreased by 1)
+        0x13, // Parameter 12 (decreased by 1)
+        0x2E, // Parameter 13 (decreased by 1)
+        0x30  // Parameter 14 (decreased by 1)
     };
     for (int i = 0; i < sizeof(negative_gamma); i++) {
-        spi_master_write_data_byte(dev, negative_gamma[i]); // Write each gamma setting
+        spi_master_write_data_byte(dev, negative_gamma[i]);
     }
-    delayMS(10);                            // Wait for 10 milliseconds after setting negative gamma
+    delayMS(10);
 
-    // Conditionaly Enable display inversion for better color reproduction (inverts display colors)
+    // Conditionally Enable display inversion for better color reproduction (inverts display colors)
     #if CONFIG_INVERSION
         ESP_LOGI(TAG, "Enabling Display Inversion");
         spi_master_write_command(dev, 0x21);    // INVON: Display Inversion On
@@ -396,7 +466,6 @@ void lcdInit(TFT_t *dev, int width, int height, int offsetx, int offsety, uint8_
         ESP_LOGI(TAG, "Backlight turned on via lcdInit");
     }
 }
-
 
 // Draw pixel
 // x:X coordinate
@@ -792,11 +861,85 @@ void lcdDrawFillArrow(TFT_t *dev, uint16_t x0, uint16_t y0, uint16_t x1, uint16_
     }
 }
 
-// RGB565 conversion
-// RGB565 is R(5)+G(6)+B(5)=16bit color format.
-// Bit image "RRRRRGGGGGGBBBBB"
-uint16_t rgb565_conv(uint16_t r, uint16_t g, uint16_t b) {
-    return (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+// Implementation of rgb565_conv_with_color_tweaks
+uint16_t rgb565_conv_with_color_tweaks(
+    uint16_t r, uint16_t g, uint16_t b
+) {
+    // Compute luminance to determine tonal range
+    float luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+
+    // Determine tonal range thresholds (you can adjust these thresholds as needed)
+    const float shadows_threshold = 85.0f;      // Approx 33% of 255
+    const float highlights_threshold = 170.0f;  // Approx 66% of 255
+
+    int adjust_cyan_red = 0;
+    int adjust_magenta_green = 0;
+    int adjust_yellow_blue = 0;
+
+    // Select the appropriate adjustments based on the tonal range
+    if (luminance <= shadows_threshold) {
+        // Shadows
+        adjust_cyan_red = color_tweaks.shadows_cyan_red;
+        adjust_magenta_green = color_tweaks.shadows_magenta_green;
+        adjust_yellow_blue = color_tweaks.shadows_yellow_blue;
+    } else if (luminance >= highlights_threshold) {
+        // Highlights
+        adjust_cyan_red = color_tweaks.highlights_cyan_red;
+        adjust_magenta_green = color_tweaks.highlights_magenta_green;
+        adjust_yellow_blue = color_tweaks.highlights_yellow_blue;
+    } else {
+        // Midtones
+        adjust_cyan_red = color_tweaks.midtones_cyan_red;
+        adjust_magenta_green = color_tweaks.midtones_magenta_green;
+        adjust_yellow_blue = color_tweaks.midtones_yellow_blue;
+    }
+
+    // Apply color adjustments as percentage
+    float rf = r * (1.0f + adjust_cyan_red / 100.0f);
+    float gf = g * (1.0f + adjust_magenta_green / 100.0f);
+    float bf = b * (1.0f + adjust_yellow_blue / 100.0f);
+
+    // Clamp the values between 0 and 255 to avoid overflow or underflow
+    rf = fminf(fmaxf(rf, 0.0f), 255.0f);
+    gf = fminf(fmaxf(gf, 0.0f), 255.0f);
+    bf = fminf(fmaxf(bf, 0.0f), 255.0f);
+
+    // Apply brightness adjustment
+    float brightness_factor = brightness_percent / 100.0f * 255.0f;
+    rf = rf + brightness_factor;
+    gf = gf + brightness_factor;
+    bf = bf + brightness_factor;
+
+    // Clamp values again after brightness adjustment
+    rf = fminf(fmaxf(rf, 0.0f), 255.0f);
+    gf = fminf(fmaxf(gf, 0.0f), 255.0f);
+    bf = fminf(fmaxf(bf, 0.0f), 255.0f);
+
+    // Apply contrast adjustment
+    float contrast_factor = (100.0f + contrast_percent) / 100.0f;
+    float midpoint = 128.0f;
+
+    rf = (rf - midpoint) * contrast_factor + midpoint;
+    gf = (gf - midpoint) * contrast_factor + midpoint;
+    bf = (bf - midpoint) * contrast_factor + midpoint;
+
+    // Clamp values again after contrast adjustment
+    rf = fminf(fmaxf(rf, 0.0f), 255.0f);
+    gf = fminf(fmaxf(gf, 0.0f), 255.0f);
+    bf = fminf(fmaxf(bf, 0.0f), 255.0f);
+
+    // Apply gamma correction to each channel
+    rf = powf(rf / 255.0f, gamma_red) * 255.0f;
+    gf = powf(gf / 255.0f, gamma_green) * 255.0f;
+    bf = powf(bf / 255.0f, gamma_blue) * 255.0f;
+
+    // Convert to integer with rounding
+    uint16_t ri = (uint16_t)(rf + 0.5f);
+    uint16_t gi = (uint16_t)(gf + 0.5f);
+    uint16_t bi = (uint16_t)(bf + 0.5f);
+
+    // Convert to RGB565 format
+    return ((ri & 0xF8) << 8) | ((gi & 0xFC) << 3) | (bi >> 3);
 }
 
 // Draw ASCII character
@@ -805,159 +948,153 @@ uint16_t rgb565_conv(uint16_t r, uint16_t g, uint16_t b) {
 // ascii: ascii code
 // color:color
 int lcdDrawChar(TFT_t * dev, FontxFile *fxs, uint16_t x, uint16_t y, uint8_t ascii, uint16_t color) {
-	uint16_t xx,yy,bit,ofs;
-	unsigned char fonts[128]; // font pattern
-	unsigned char pw, ph;
-	int h,w;
-	uint16_t mask;
-	bool rc;
+    uint16_t xx, yy, bit, ofs;
+    unsigned char fonts[128]; // font pattern
+    unsigned char pw, ph;
+    int h, w;
+    uint16_t mask;
+    bool rc;
 
-	if(_DEBUG_)printf("_font_direction=%d\n",dev->_font_direction);
-	rc = GetFontx(fxs, ascii, fonts, &pw, &ph);
-	if(_DEBUG_)printf("GetFontx rc=%d pw=%d ph=%d\n",rc,pw,ph);
-	if (!rc) return 0;
+    if(_DEBUG_)printf("_font_direction=%d\n", dev->_font_direction);
+    rc = GetFontx(fxs, ascii, fonts, &pw, &ph);
+    if(_DEBUG_)printf("GetFontx rc=%d pw=%d ph=%d\n", rc, pw, ph);
+    if (!rc) return 0;
 
-	int16_t xd1 = 0;
-	int16_t yd1 = 0;
-	int16_t xd2 = 0;
-	int16_t yd2 = 0;
-	uint16_t xss = 0;
-	uint16_t yss = 0;
-	int16_t xsd = 0;
-	int16_t ysd = 0;
-	int16_t next = 0;
-	uint16_t x0  = 0;
-	uint16_t x1  = 0;
-	uint16_t y0  = 0;
-	uint16_t y1  = 0;
-	if (dev->_font_direction == 0) {
-		xd1 = +1;
-		yd1 = +1; //-1;
-		xd2 =  0;
-		yd2 =  0;
-		xss =  x;
-		yss =  y - (ph - 1);
-		xsd =  1;
-		ysd =  0;
-		next = x + pw;
+    int16_t xd1 = 0;
+    int16_t yd1 = 0;
+    int16_t xd2 = 0;
+    // Remove or comment out the unused variable 'yd2'
+    // int16_t yd2 = 0;
+    uint16_t xss = 0;
+    uint16_t yss = 0;
+    int16_t xsd = 0;
+    int16_t ysd = 0;
+    int16_t next = 0;
+    uint16_t x0  = 0;
+    uint16_t x1  = 0;
+    uint16_t y0  = 0;
+    uint16_t y1_ = 0;
+    if (dev->_font_direction == DIRECTION0) {
+        xd1 = +1;
+        yd1 = +1; //-1;
+        xd2 =  0;
+        yss =  y - (ph - 1);
+        xsd =  1;
+        ysd =  0;
+        next = x + pw;
 
-		x0	= x;
-		y0	= y - (ph-1);
-		x1	= x + (pw-1);
-		y1	= y;
-	} else if (dev->_font_direction == 2) {
-		xd1 = -1;
-		yd1 = -1; //+1;
-		xd2 =  0;
-		yd2 =  0;
-		xss =  x;
-		yss =  y + ph + 1;
-		xsd =  1;
-		ysd =  0;
-		next = x - pw;
+        x0  = x;
+        y0  = y - (ph-1);
+        x1  = x + (pw-1);
+        y1_ = y;
+    } else if (dev->_font_direction == DIRECTION180) {
+        xd1 = -1;
+        yd1 = -1; //+1;
+        xd2 =  0;
+        yss =  y + ph + 1;
+        xsd =  1;
+        ysd =  0;
+        next = x - pw;
 
-		x0	= x - (pw-1);
-		y0	= y;
-		x1	= x;
-		y1	= y + (ph-1);
-	} else if (dev->_font_direction == 1) {
-		xd1 =  0;
-		yd1 =  0;
-		xd2 = -1;
-		yd2 = +1; //-1;
-		xss =  x + ph;
-		yss =  y;
-		xsd =  0;
-		ysd =  1;
-		next = y + pw; //y - pw;
+        x0  = x - (pw-1);
+        y0  = y;
+        x1  = x;
+        y1_ = y + (ph-1);
+    } else if (dev->_font_direction == DIRECTION90) {
+        xd1 =  0;
+        yd1 =  0;
+        xd2 = -1;
+        ysd =  1; //-1;
+        xss =  x + ph;
+        yss =  y;
+        xsd =  0;
+        next = y + pw; //y - pw;
 
-		x0	= x;
-		y0	= y;
-		x1	= x + (ph-1);
-		y1	= y + (pw-1);
-	} else if (dev->_font_direction == 3) {
-		xd1 =  0;
-		yd1 =  0;
-		xd2 = +1;
-		yd2 = -1; //+1;
-		xss =  x - (ph - 1);
-		yss =  y;
-		xsd =  0;
-		ysd =  1;
-		next = y - pw; //y + pw;
+        x0  = x;
+        y0  = y;
+        x1  = x + (ph-1);
+        y1_ = y + (pw-1);
+    } else if (dev->_font_direction == DIRECTION270) {
+        xd1 =  0;
+        yd1 =  0;
+        xd2 = +1;
+        ysd =  -1; //+1;
+        xss =  x - (ph - 1);
+        yss =  y;
+        xsd =  0;
+        next = y - pw; //y + pw;
 
-		x0	= x - (ph-1);
-		y0	= y - (pw-1);
-		x1	= x;
-		y1	= y;
-	}
+        x0  = x - (ph-1);
+        y0  = y - (pw-1);
+        x1  = x;
+        y1_ = y;
+    }
 
-	if (dev->_font_fill) lcdDrawFillRect(dev, x0, y0, x1, y1, dev->_font_fill_color);
-	
-	ESP_LOGD(TAG, "Filling font background: x0=%d y0=%d x1=%d y1=%d color=0x%04X", x0, y0, x1, y1, dev->_font_fill_color);
+    if (dev->_font_fill) {
+        lcdDrawFillRect(dev, x0, y0, x1, y1_, dev->_font_fill_color);
+        ESP_LOGD(TAG, "Filling font background: x0=%d y0=%d x1=%d y1=%d color=0x%04X", x0, y0, x1, y1_, dev->_font_fill_color);
+    }
 
+    int bits;
+    if(_DEBUG_)printf("xss=%d yss=%d\n",xss,yss);
+    ofs = 0;
+    yy = yss;
+    xx = xss;
+    for(h = 0; h < ph; h++) {
+        if(xsd) xx = xss;
+        if(ysd) yy = yss;
+        //for(w=0;w<(pw/8);w++) {
+        bits = pw;
+        for(w = 0; w < ((pw + 4) / 8); w++) {
+            mask = 0x80;
+            for(bit = 0; bit < 8; bit++) {
+                bits--;
+                if (bits < 0) continue;
+                //if(_DEBUG_)printf("xx=%d yy=%d mask=%02x fonts[%d]=%02x\n",xx,yy,mask,ofs,fonts[ofs]);
+                if (fonts[ofs] & mask) {
+                    lcdDrawPixel(dev, xx, yy, color);
+                } else {
+                    //if (dev->_font_fill) lcdDrawPixel(dev, xx, yy, dev->_font_fill_color);
+                }
+                if (h == (ph-2) && dev->_font_underline)
+                    lcdDrawPixel(dev, xx, yy, dev->_font_underline_color);
+                if (h == (ph-1) && dev->_font_underline)
+                    lcdDrawPixel(dev, xx, yy, dev->_font_underline_color);
+                xx = xx + xd1;
+                yy = yy + ysd;
+                mask = mask >> 1;
+            }
+            ofs++;
+        }
+        yy = yy + yd1;
+        xx = xx + xd2;
+    }
 
-	int bits;
-	if(_DEBUG_)printf("xss=%d yss=%d\n",xss,yss);
-	ofs = 0;
-	yy = yss;
-	xx = xss;
-	for(h=0;h<ph;h++) {
-		if(xsd) xx = xss;
-		if(ysd) yy = yss;
-		//for(w=0;w<(pw/8);w++) {
-		bits = pw;
-		for(w=0;w<((pw+4)/8);w++) {
-			mask = 0x80;
-			for(bit=0;bit<8;bit++) {
-				bits--;
-				if (bits < 0) continue;
-				//if(_DEBUG_)printf("xx=%d yy=%d mask=%02x fonts[%d]=%02x\n",xx,yy,mask,ofs,fonts[ofs]);
-				if (fonts[ofs] & mask) {
-					lcdDrawPixel(dev, xx, yy, color);
-				} else {
-					//if (dev->_font_fill) lcdDrawPixel(dev, xx, yy, dev->_font_fill_color);
-				}
-				if (h == (ph-2) && dev->_font_underline)
-					lcdDrawPixel(dev, xx, yy, dev->_font_underline_color);
-				if (h == (ph-1) && dev->_font_underline)
-					lcdDrawPixel(dev, xx, yy, dev->_font_underline_color);
-				xx = xx + xd1;
-				yy = yy + yd2;
-				mask = mask >> 1;
-			}
-			ofs++;
-		}
-		yy = yy + yd1;
-		xx = xx + xd2;
-	}
-
-	if (next < 0) next = 0;
-	return next;
+    if (next < 0) next = 0;
+    return next;
 }
 
 int lcdDrawString(TFT_t * dev, FontxFile *fx, uint16_t x, uint16_t y, uint8_t * ascii, uint16_t color) {
-	int length = strlen((char *)ascii);
+    int length = strlen((char *)ascii);
 	if(_DEBUG_)printf("lcdDrawString length=%d\n",length);
-	ESP_LOGD(TAG, "Drawing string: \"%s\" at x=%d y=%d color=0x%04X", ascii, x, y, color);
+    ESP_LOGD(TAG, "Drawing string: \"%s\" at x=%d y=%d color=0x%04X", ascii, x, y, color);
 	for(int i=0;i<length;i++) {
 		if(_DEBUG_)printf("ascii[%d]=%x x=%d y=%d\n",i,ascii[i],x,y);
 		if (dev->_font_direction == 0)
-			x = lcdDrawChar(dev, fx, x, y, ascii[i], color);
+            x = lcdDrawChar(dev, fx, x, y, ascii[i], color);
 		if (dev->_font_direction == 1)
-			y = lcdDrawChar(dev, fx, x, y, ascii[i], color);
+            y = lcdDrawChar(dev, fx, x, y, ascii[i], color);
 		if (dev->_font_direction == 2)
-			x = lcdDrawChar(dev, fx, x, y, ascii[i], color);
+            x = lcdDrawChar(dev, fx, x, y, ascii[i], color);
 		if (dev->_font_direction == 3)
-			y = lcdDrawChar(dev, fx, x, y, ascii[i], color);
-	}
+            y = lcdDrawChar(dev, fx, x, y, ascii[i], color);
+    }
 	if (dev->_font_direction == 0) return x;
 	if (dev->_font_direction == 2) return x;
 	if (dev->_font_direction == 1) return y;
 	if (dev->_font_direction == 3) return y;
-	return 0;
+    return 0;
 }
-
 
 // Draw Non-Alphanumeric character
 // x:X coordinate
@@ -967,18 +1104,18 @@ int lcdDrawString(TFT_t * dev, FontxFile *fx, uint16_t x, uint16_t y, uint8_t * 
 int lcdDrawCode(TFT_t * dev, FontxFile *fx, uint16_t x,uint16_t y,uint8_t code,uint16_t color) {
 	if(_DEBUG_)printf("code=%x x=%d y=%d\n",code,x,y);
 	if (dev->_font_direction == 0)
-		x = lcdDrawChar(dev, fx, x, y, code, color);
+        x = lcdDrawChar(dev, fx, x, y, code, color);
 	if (dev->_font_direction == 1)
-		y = lcdDrawChar(dev, fx, x, y, code, color);
+        y = lcdDrawChar(dev, fx, x, y, code, color);
 	if (dev->_font_direction == 2)
-		x = lcdDrawChar(dev, fx, x, y, code, color);
+        x = lcdDrawChar(dev, fx, x, y, code, color);
 	if (dev->_font_direction == 3)
-		y = lcdDrawChar(dev, fx, x, y, code, color);
+        y = lcdDrawChar(dev, fx, x, y, code, color);
 	if (dev->_font_direction == 0) return x;
 	if (dev->_font_direction == 2) return x;
 	if (dev->_font_direction == 1) return y;
 	if (dev->_font_direction == 3) return y;
-	return 0;
+    return 0;
 }
 
 #if 0
@@ -987,7 +1124,7 @@ int lcdDrawCode(TFT_t * dev, FontxFile *fx, uint16_t x,uint16_t y,uint8_t code,u
 // y:Y coordinate
 // utf8:UTF8 code
 // color:color
-int lcdDrawUTF8Char(TFT_t * dev, FontxFile *fx, uint16_t x,uint16_t y,uint8_t *utf8,uint16_t color) {
+int lcdDrawUTF8Char(TFT_t *dev, FontxFile *fx, uint16_t x, uint16_t y, uint8_t *utf8, uint16_t color) {
     uint16_t sjis[1];
 
     sjis[0] = UTF2SJIS(utf8);

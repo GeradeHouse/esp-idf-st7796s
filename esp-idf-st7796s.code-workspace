@@ -7,7 +7,9 @@
     "settings": {
         "files.associations": {
             "bmpfile.h": "c",
-            "pngle.h": "c"
+            "pngle.h": "c",
+            "esp_log.h": "c",
+            "rtc_io.h": "c"
         }
     }
 }

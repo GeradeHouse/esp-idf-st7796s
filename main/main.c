@@ -11,6 +11,10 @@
 #include "esp_vfs.h"
 #include "esp_spiffs.h"
 
+#include "driver/ledc.h"      // Include LEDC driver definitions
+#include "driver/gpio.h"      // Include GPIO driver definitions
+#include "driver/rtc_io.h"    // Include RTC GPIO driver definitions
+
 // Replace deprecated header
 #include <miniz.h>  // Use the updated standalone miniz.h
 
@@ -21,8 +25,15 @@
 #include "decode_png.h"
 #include "pngle.h"
 
+#include "sdkconfig.h" // Ensure sdkconfig.h is included to access CONFIG_* variables
+
+#define LED_PIN GPIO_NUM_0  // GPIO 0 is connected to the onboard RGB LED
+
 #define INTERVAL 400  // Interval between tests in milliseconds
+#define INTERVAL_LONG 2000  // Interval between tests in milliseconds
+
 #define WAIT vTaskDelay(INTERVAL)  // Macro to simplify delay calls
+#define WAIT_LONG vTaskDelay(INTERVAL_LONG)  // Macro to simplify delay calls
 
 static const char *TAG = "ST7796S";  // Logging tag for this module
 
@@ -462,7 +473,7 @@ TickType_t FillRectTest(TFT_t * dev, int width, int height) {
 		red=rand()%255;
 		green=rand()%255;
 		blue=rand()%255;
-		color=rgb565_conv(red, green, blue);
+		color=rgb565_conv_with_color_tweaks(red, green, blue); // Updated function call
 		uint16_t xpos=rand()%width;
 		uint16_t ypos=rand()%height;
 		uint16_t size=rand()%(width/5);
@@ -501,146 +512,150 @@ TickType_t ColorTest(TFT_t * dev, int width, int height) {
 
 
 TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
-	TickType_t startTick, endTick, diffTick;
-	startTick = xTaskGetTickCount();
+    TickType_t startTick, endTick, diffTick;
+    startTick = xTaskGetTickCount();
 
-	lcdSetFontDirection(dev, 0);
-	lcdFillScreen(dev, BLACK);
+    lcdSetFontDirection(dev, 0);
+    lcdFillScreen(dev, BLACK);
 
-	// open requested file
-	esp_err_t ret;
-	FILE* fp = fopen(file, "rb");
-	if (fp == NULL) {
-		ESP_LOGW(__FUNCTION__, "File not found [%s]", file);
-		return 0;
-	}
+    // Open the requested file
+    FILE* fp = fopen(file, "rb");
+    if (fp == NULL) {
+        ESP_LOGW(__FUNCTION__, "File not found [%s]", file);
+        return 0;
+    }
 
-	// read bmp header
-	bmpfile_t *result = (bmpfile_t*)malloc(sizeof(bmpfile_t));
-	ret = fread(result->header.magic, 1, 2, fp);
-	assert(ret == 2);
-	if (result->header.magic[0]!='B' || result->header.magic[1] != 'M') {
-		ESP_LOGW(__FUNCTION__, "File is not BMP");
-		free(result);
-		fclose(fp);
-		return 0;
-	}
-	ret = fread(&result->header.filesz, 4, 1 , fp);
-	assert(ret == 1);
-	ESP_LOGD(__FUNCTION__,"result->header.filesz=%"PRIu32, result->header.filesz);
-	ret = fread(&result->header.creator1, 2, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->header.creator2, 2, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->header.offset, 4, 1, fp);
-	assert(ret == 1);
+    // Read BMP header
+    bmpfile_t *result = (bmpfile_t*)malloc(sizeof(bmpfile_t));
+    size_t ret = fread(result->header.magic, 1, 2, fp);
+    assert(ret == 2);
+    if (result->header.magic[0] != 'B' || result->header.magic[1] != 'M') {
+        ESP_LOGW(__FUNCTION__, "File is not BMP");
+        free(result);
+        fclose(fp);
+        return 0;
+    }
+    ret = fread(&result->header.filesz, 4, 1, fp);
+    assert(ret == 1);
+    ESP_LOGD(__FUNCTION__, "result->header.filesz=%" PRIu32, result->header.filesz);
+    ret = fread(&result->header.creator1, 2, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->header.creator2, 2, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->header.offset, 4, 1, fp);
+    assert(ret == 1);
 
-	// read dib header
-	ret = fread(&result->dib.header_sz, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.width, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.height, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.nplanes, 2, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.depth, 2, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.compress_type, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.bmp_bytesz, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.hres, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.vres, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.ncolors, 4, 1, fp);
-	assert(ret == 1);
-	ret = fread(&result->dib.nimpcolors, 4, 1, fp);
-	assert(ret == 1);
+    // Read DIB header
+    ret = fread(&result->dib.header_sz, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.width, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.height, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.nplanes, 2, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.depth, 2, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.compress_type, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.bmp_bytesz, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.hres, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.vres, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.ncolors, 4, 1, fp);
+    assert(ret == 1);
+    ret = fread(&result->dib.nimpcolors, 4, 1, fp);
+    assert(ret == 1);
 
-	if((result->dib.depth == 24) && (result->dib.compress_type == 0)) {
-		ESP_LOGD(__FUNCTION__, "Processing 24-bit BMP");
-		// BMP rows are padded (if needed) to 4-byte boundary
-		uint32_t rowSize = (result->dib.width * 3 + 3) & ~3;
-		int w = result->dib.width;
-		int h = result->dib.height;
-		ESP_LOGD(__FUNCTION__,"w=%d h=%d", w, h);
-		int _x;
-		int _w;
-		int _cols;
-		int _cole;
-		if (width >= w) {
-			_x = (width - w) / 2;
-			_w = w;
-			_cols = 0;
-			_cole = w - 1;
-		} else {
-			_x = 0;
-			_w = width;
-			_cols = (w - width) / 2;
-			_cole = _cols + width - 1;
-		}
-		ESP_LOGD(__FUNCTION__,"_x=%d _w=%d _cols=%d _cole=%d",_x, _w, _cols, _cole);
+    // Log BMP header details
+    ESP_LOGI(__FUNCTION__, "BMP Header Details:");
+    ESP_LOGI(__FUNCTION__, "Width: %" PRIu32 ", Height: %" PRIu32, result->dib.width, result->dib.height);
+    ESP_LOGI(__FUNCTION__, "Depth: %" PRIu16 " bits, Compression Type: %" PRIu32, result->dib.depth, result->dib.compress_type);
+    ESP_LOGI(__FUNCTION__, "BMP Bytes Size: %" PRIu32, result->dib.bmp_bytesz);
 
-		int _y;
-		int _rows;
-		int _rowe;
-		if (height >= h) {
-			_y = (height - h) / 2;
-			_rows = 0;
-			_rowe = h -1;
-		} else {
-			_y = 0;
-			_rows = (h - height) / 2;
-			_rowe = _rows + height - 1;
-		}
-		ESP_LOGD(__FUNCTION__,"_y=%d _rows=%d _rowe=%d", _y, _rows, _rowe);
+    if ((result->dib.depth == 24) && (result->dib.compress_type == 0)) {
+        ESP_LOGD(__FUNCTION__, "Processing 24-bit BMP");
+        // BMP rows are padded (if needed) to 4-byte boundary
+        uint32_t rowSize = (result->dib.width * 3 + 3) & ~3;
+        int w = result->dib.width;
+        int h = result->dib.height;
+        ESP_LOGD(__FUNCTION__, "w=%d h=%d", w, h);
+        int _x;
+        int _w;
+        int _cols;
+        int _cole;
+        if (width >= w) {
+            _x = (width - w) / 2;
+            _w = w;
+            _cols = 0;
+            _cole = w - 1;
+        } else {
+            _x = 0;
+            _w = width;
+            _cols = (w - width) / 2;
+            _cole = _cols + width - 1;
+        }
+        ESP_LOGD(__FUNCTION__, "_x=%d _w=%d _cols=%d _cole=%d", _x, _w, _cols, _cole);
 
-#define BUFFPIXEL 20
-		uint8_t sdbuffer[3*BUFFPIXEL]; // pixel buffer (R+G+B per pixel)
-		uint16_t *colors = (uint16_t*)malloc(sizeof(uint16_t) * w);
+        int _y;
+        int _rows;
+        int _rowe;
+        if (height >= h) {
+            _y = (height - h) / 2;
+            _rows = 0;
+            _rowe = h - 1;
+        } else {
+            _y = 0;
+            _rows = (h - height) / 2;
+            _rowe = _rows + height - 1;
+        }
+        ESP_LOGD(__FUNCTION__, "_y=%d _rows=%d _rowe=%d", _y, _rows, _rowe);
 
-		for (int row=0; row<h; row++) { // For each scanline...
-			if (row < _rows || row > _rowe) continue;
-			// Seek to start of scan line.	It might seem labor-
-			// intensive to be doing this on every line, but this
-			// method covers a lot of gritty details like cropping
-			// and scanline padding.  Also, the seek only takes
-			// place if the file position actually needs to change
-			// (avoids a lot of cluster math in SD library).
-			// Bitmap is stored bottom-to-top order (normal BMP)
-			int pos = result->header.offset + (h - 1 - row) * rowSize;
-			fseek(fp, pos, SEEK_SET);
-			int buffidx = sizeof(sdbuffer); // Force buffer reload
+        #define BUFFPIXEL 20
+        uint8_t sdbuffer[3 * BUFFPIXEL]; // Pixel buffer (R+G+B per pixel)
+        uint16_t *colors = (uint16_t*)malloc(sizeof(uint16_t) * w);
 
-			int index = 0;
-			for (int col=0; col<w; col++) { // For each pixel...
-				if (buffidx >= sizeof(sdbuffer)) { // Indeed
-					fread(sdbuffer, sizeof(sdbuffer), 1, fp);
-					buffidx = 0; // Set index to beginning
-				}
-				if (col < _cols || col > _cole) continue;
-				// Convert pixel from BMP to TFT format, push to display
-				uint8_t b = sdbuffer[buffidx++];
-				uint8_t g = sdbuffer[buffidx++];
-				uint8_t r = sdbuffer[buffidx++];
-				colors[index++] = rgb565_conv(r, g, b);
-			} // end for col
-			ESP_LOGD(__FUNCTION__,"lcdDrawMultiPixels _x=%d _y=%d row=%d",_x, _y, row);
-			//lcdDrawMultiPixels(dev, _x, row+_y, _w, colors);
-			lcdDrawMultiPixels(dev, _x, _y, _w, colors);
-			_y++;
-		} // end for row
-		free(colors);
-	} // end if
-	free(result);
-	fclose(fp);
+        for (int row = 0; row < h; row++) { // For each scanline...
+            if (row < _rows || row > _rowe) continue;
+            // Seek to start of scan line
+            int pos = result->header.offset + (h - 1 - row) * rowSize;
+            fseek(fp, pos, SEEK_SET);
+            int buffidx = sizeof(sdbuffer); // Force buffer reload
 
-	endTick = xTaskGetTickCount();
-	diffTick = endTick - startTick;
-	ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%"PRIu32,diffTick*portTICK_PERIOD_MS);
-	return diffTick;
+            int index = 0;
+            for (int col = 0; col < w; col++) { // For each pixel...
+                if (buffidx >= sizeof(sdbuffer)) { // Buffer reload
+                    fread(sdbuffer, sizeof(sdbuffer), 1, fp);
+                    buffidx = 0; // Reset index to beginning
+                }
+                if (col < _cols || col > _cole) continue;
+                // Convert pixel from BMP to TFT format
+                uint8_t b = sdbuffer[buffidx++];
+                uint8_t g = sdbuffer[buffidx++];
+                uint8_t r = sdbuffer[buffidx++];
+                colors[index++] = rgb565_conv_with_color_tweaks(r, g, b); // Updated function call
+            } // end for col
+            ESP_LOGD(__FUNCTION__, "lcdDrawMultiPixels _x=%d _y=%d row=%d", _x, _y, row);
+            lcdDrawMultiPixels(dev, _x, _y, _w, colors);
+            _y++;
+
+            // Allow RTOS to switch tasks to prevent watchdog timeout
+            vTaskDelay(1);
+
+        } // end for row
+
+        free(colors);
+    } // end if depth==24 and compress_type==0
+
+    free(result);
+    fclose(fp);
+
+    endTick = xTaskGetTickCount();
+    diffTick = endTick - startTick;
+    ESP_LOGI(__FUNCTION__, "Elapsed time [ms]: %" PRIu32, diffTick * portTICK_PERIOD_MS);
+    return diffTick;
 }
 
 TickType_t QRTest(TFT_t * dev, char * file, int width, int height) {
@@ -796,6 +811,10 @@ TickType_t QRTest(TFT_t * dev, char * file, int width, int height) {
 			lcdDrawMultiPixels(dev, _x, _y, _w, colors);
 			debug--;
 			_y++;
+
+			// Allow RTOS to switch tasks to prevent watchdog timeout
+			vTaskDelay(1);
+
 		} // end for row
 		free(sdbuffer);
 		free(colors);
@@ -1073,135 +1092,171 @@ void st7796s_task(void *pvParameters)
 
 	while (1) {
 
-		FillTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// FillTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		ColorBarTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// ColorBarTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		ArrowTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// ArrowTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		LineTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// LineTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		CircleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// CircleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		RoundRectTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// RoundRectTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		RectAngleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// RectAngleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		TriangleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// TriangleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		if (CONFIG_WIDTH >= 240) {
-			DirectionTest(&dev, fx24G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		} else {
-			DirectionTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		}
-		WAIT;
+		// if (CONFIG_WIDTH >= 240) {
+		// 	DirectionTest(&dev, fx24G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// } else {
+		// 	DirectionTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// }
+		// WAIT;
 
-		if (CONFIG_WIDTH >= 240) {
-			HorizontalTest(&dev, fx24G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		} else {
-			HorizontalTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		}
-		WAIT;
+		// if (CONFIG_WIDTH >= 240) {
+		// 	HorizontalTest(&dev, fx24G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// } else {
+		// 	HorizontalTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// }
+		// WAIT;
 
-		if (CONFIG_WIDTH >= 240) {
-			VerticalTest(&dev, fx24G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		} else {
-			VerticalTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		}
-		WAIT;
+		// if (CONFIG_WIDTH >= 240) {
+		// 	VerticalTest(&dev, fx24G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// } else {
+		// 	VerticalTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// }
+		// WAIT;
 
-		FillRectTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// FillRectTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		ColorTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// ColorTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		CodeTest(&dev, fx32G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// CodeTest(&dev, fx32G, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
-		CodeTest(&dev, fx32L, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// CodeTest(&dev, fx32L, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
 
 		char file[32];
-		strcpy(file, "/spiffs/image.bmp");
-		BMPTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		// strcpy(file, "/spiffs/image.bmp");
+		// BMPTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT_LONG;
 
-#ifndef CONFIG_IDF_TARGET_ESP32S2
-		strcpy(file, "/spiffs/esp32.jpeg");
+
+		strcpy(file, "/spiffs/image-1.jpeg");
 		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
-#endif
+		WAIT_LONG;
 
-		strcpy(file, "/spiffs/esp_logo.png");
-		PNGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		strcpy(file, "/spiffs/image-2.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
 
-		strcpy(file, "/spiffs/qrcode.bmp");
-		QRTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
-		WAIT;
+		strcpy(file, "/spiffs/image-3.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
 
-		// Multi Font Test
-		uint16_t color;
-		uint8_t ascii[40];
-		uint16_t margin = 10;
-		lcdFillScreen(&dev, BLACK);
-		color = WHITE;
-		lcdSetFontDirection(&dev, 0);
-		uint16_t xpos = 0;
-		uint16_t ypos = 15;
-		int xd = 0;
-		int yd = 1;
-		if (CONFIG_WIDTH < CONFIG_HEIGHT) {
-			lcdSetFontDirection(&dev, 1);
-			xpos = (CONFIG_WIDTH - 1) - 16;
-			ypos = 0;
-			xd = 1;
-			yd = 0;
-		}
-		strcpy((char *)ascii, "16Dot Gothic Font");
-		lcdDrawString(&dev, fx16G, xpos, ypos, ascii, color);
+		strcpy(file, "/spiffs/image-4.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
 
-		xpos = xpos - (24 * xd) - (margin * xd);
-		ypos = ypos + (16 * yd) + (margin * yd);
-		strcpy((char *)ascii, "24Dot Gothic Font");
-		lcdDrawString(&dev, fx24G, xpos, ypos, ascii, color);
+		strcpy(file, "/spiffs/image-5.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
 
-		xpos = xpos - (32 * xd) - (margin * xd);
-		ypos = ypos + (24 * yd) + (margin * yd);
-		if (CONFIG_WIDTH >= 240) {
-			strcpy((char *)ascii, "32Dot Gothic Font");
-			lcdDrawString(&dev, fx32G, xpos, ypos, ascii, color);
-			xpos = xpos - (32 * xd) - (margin * xd);
-			ypos = ypos + (32 * yd) + (margin * yd);
-		}
+		strcpy(file, "/spiffs/image-6.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
 
-		xpos = xpos - (10 * xd) - (margin * xd);
-		ypos = ypos + (10 * yd) + (margin * yd);
-		strcpy((char *)ascii, "16Dot Mincyo Font");
-		lcdDrawString(&dev, fx16M, xpos, ypos, ascii, color);
+		strcpy(file, "/spiffs/image-7.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
 
-		xpos = xpos - (24 * xd) - (margin * xd);
-		ypos = ypos + (16 * yd) + (margin * yd);
-		strcpy((char *)ascii, "24Dot Mincyo Font");
-		lcdDrawString(&dev, fx24M, xpos, ypos, ascii, color);
+		strcpy(file, "/spiffs/image-8.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
 
-		if (CONFIG_WIDTH >= 240) {
-			xpos = xpos - (32 * xd) - (margin * xd);
-			ypos = ypos + (24 * yd) + (margin * yd);
-			strcpy((char *)ascii, "32Dot Mincyo Font");
-			lcdDrawString(&dev, fx32M, xpos, ypos, ascii, color);
-		}
-		lcdSetFontDirection(&dev, 0);
-		WAIT;
+		strcpy(file, "/spiffs/image-9.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
+
+		strcpy(file, "/spiffs/image-10.jpeg");
+		JPEGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		WAIT_LONG;
+
+
+		// strcpy(file, "/spiffs/esp_logo.png");
+		// PNGTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
+
+		// strcpy(file, "/spiffs/qrcode.bmp");
+		// QRTest(&dev, file, CONFIG_WIDTH, CONFIG_HEIGHT);
+		// WAIT;
+
+		// // Multi Font Test
+		// uint16_t color;
+		// uint8_t ascii[40];
+		// uint16_t margin = 10;
+		// lcdFillScreen(&dev, BLACK);
+		// color = WHITE;
+		// lcdSetFontDirection(&dev, 0);
+		// uint16_t xpos = 0;
+		// uint16_t ypos = 15;
+		// int xd = 0;
+		// int yd = 1;
+		// if (CONFIG_WIDTH < CONFIG_HEIGHT) {
+		// 	lcdSetFontDirection(&dev, 1);
+		// 	xpos = (CONFIG_WIDTH - 1) - 16;
+		// 	ypos = 0;
+		// 	xd = 1;
+		// 	yd = 0;
+		// }
+		// strcpy((char *)ascii, "16Dot Gothic Font");
+		// lcdDrawString(&dev, fx16G, xpos, ypos, ascii, color);
+
+		// xpos = xpos - (24 * xd) - (margin * xd);
+		// ypos = ypos + (16 * yd) + (margin * yd);
+		// strcpy((char *)ascii, "24Dot Gothic Font");
+		// lcdDrawString(&dev, fx24G, xpos, ypos, ascii, color);
+
+		// xpos = xpos - (32 * xd) - (margin * xd);
+		// ypos = ypos + (24 * yd) + (margin * yd);
+		// if (CONFIG_WIDTH >= 240) {
+		// 	strcpy((char *)ascii, "32Dot Gothic Font");
+		// 	lcdDrawString(&dev, fx32G, xpos, ypos, ascii, color);
+		// 	xpos = xpos - (32 * xd) - (margin * xd);
+		// 	ypos = ypos + (32 * yd) + (margin * yd);
+		// }
+
+		// xpos = xpos - (10 * xd) - (margin * xd);
+		// ypos = ypos + (10 * yd) + (margin * yd);
+		// strcpy((char *)ascii, "16Dot Mincyo Font");
+		// lcdDrawString(&dev, fx16M, xpos, ypos, ascii, color);
+
+		// xpos = xpos - (24 * xd) - (margin * xd);
+		// ypos = ypos + (16 * yd) + (margin * yd);
+		// strcpy((char *)ascii, "24Dot Mincyo Font");
+		// lcdDrawString(&dev, fx24M, xpos, ypos, ascii, color);
+
+		// if (CONFIG_WIDTH >= 240) {
+		// 	xpos = xpos - (32 * xd) - (margin * xd);
+		// 	ypos = ypos + (24 * yd) + (margin * yd);
+		// 	strcpy((char *)ascii, "32Dot Mincyo Font");
+		// 	lcdDrawString(&dev, fx32M, xpos, ypos, ascii, color);
+		// }
+		// lcdSetFontDirection(&dev, 0);
+		// WAIT;
 
 	} // end while
 
@@ -1247,6 +1302,53 @@ void app_main(void)
     // List files in the SPIFFS directory
     SPIFFS_Directory("/spiffs/");
 
+    // Disable touch functionality on GPIO0
+    rtc_gpio_deinit(GPIO_NUM_0); // Deinitialize RTC functions on GPIO0
+
+    // Configure GPIO0 as a regular GPIO pin
+    gpio_reset_pin(GPIO_NUM_0);
+    gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT); // Set as input or output as needed
+    gpio_pullup_dis(GPIO_NUM_0); // Disable pull-up resistor if not needed
+    gpio_pulldown_dis(GPIO_NUM_0); // Disable pull-down resistor if not needed
+
+    // Initialize LEDC to control the onboard RGB LED on GPIO38
+    // Define the LEDC channel and timer configurations
+    #define LEDC_TIMER              LEDC_TIMER_0
+    #define LEDC_MODE               LEDC_LOW_SPEED_MODE
+    #define LEDC_OUTPUT_IO          (38) // GPIO38
+    #define LEDC_CHANNEL            LEDC_CHANNEL_0
+    #define LEDC_DUTY_RES           LEDC_TIMER_8_BIT // Set duty resolution to 8 bits
+    #define LEDC_DUTY               (0) // Set duty to 0%
+    #define LEDC_FREQUENCY          (5000) // Frequency in Hertz. Set frequency at 5 kHz
+
+    // Prepare and then apply the LEDC timer configuration
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = LEDC_MODE,
+        .timer_num        = LEDC_TIMER,
+        .duty_resolution  = LEDC_DUTY_RES,
+        .freq_hz          = LEDC_FREQUENCY,
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ledc_timer_config(&ledc_timer);
+
+    // Prepare and then apply the LEDC channel configuration
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode     = LEDC_MODE,
+        .channel        = LEDC_CHANNEL,
+        .timer_sel      = LEDC_TIMER,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = LEDC_OUTPUT_IO,
+        .duty           = LEDC_DUTY, // Set duty to 0%
+        .hpoint         = 0
+    };
+    ledc_channel_config(&ledc_channel);
+
+    // Configure GPIO0 as output to control the onboard LED if necessary
+    // (If you have an LED connected to GPIO0)
+    gpio_reset_pin(LED_PIN);
+    gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(LED_PIN, 0); // Initialize LED to OFF
+
     // Create the display task
-    xTaskCreate(st7796s_task, "ST7796S", 1024 * 6, NULL, 2, NULL);  // Updated the task creation
+    xTaskCreate(st7796s_task, "ST7796S", 1024 * 6, NULL, 2, NULL);
 }

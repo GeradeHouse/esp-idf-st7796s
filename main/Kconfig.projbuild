@@ -1,4 +1,4 @@
-menu "ST7789 Configuration"
+menu "ST7796S Configuration"
 
     config GPIO_RANGE_MAX
         int
@@ -7,14 +7,14 @@ menu "ST7789 Configuration"
     config WIDTH
         int "SCREEN WIDTH"
         range 0 999
-        default 240
+        default 320
         help
             The width resolution of the screen.
 
     config HEIGHT
         int "SCREEN HEIGHT"
         range 0 999
-        default 240
+        default 480
         help
             The height resolution of the screen.
 
@@ -35,18 +35,16 @@ menu "ST7789 Configuration"
     config MOSI_GPIO
         int "MOSI GPIO number"
         range 0 GPIO_RANGE_MAX
-        default 35
+        default 23
         help
             GPIO number (IOxx) to SPI MOSI.
-            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as MOSI.
 
     config SCLK_GPIO
         int "SCLK GPIO number"
         range 0 GPIO_RANGE_MAX
-        default 36
+        default 18
         help
             GPIO number (IOxx) to SPI SCLK.
-            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as SCLK.
 
     config CS_GPIO
         int "CS GPIO number"
@@ -55,32 +53,29 @@ menu "ST7789 Configuration"
         help
             GPIO number (IOxx) to SPI CS.
             When it is -1, CS isn't performed.
-            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as CS.
 
     config DC_GPIO
         int "DC GPIO number"
         range 0 GPIO_RANGE_MAX
-        default 40
+        default 19
         help
             GPIO number (IOxx) to SPI DC.
-            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as DC.
 
     config RESET_GPIO
         int "RESET GPIO number"
-        range 0 GPIO_RANGE_MAX
-        default 41
+        range -1 GPIO_RANGE_MAX
+        default -1
         help
             GPIO number (IOxx) to RESET.
-            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as RESET.
+            When it is -1, RESET isn't performed.
 
     config BL_GPIO
         int "BACKLIGHT GPIO number"
         range -1 GPIO_RANGE_MAX
-        default 33
+        default 5
         help
             GPIO number (IOxx) to BACKLIGHT.
             When it is -1, BACKLIGHT isn't performed.
-            Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used as BACKLIGHT.
 
     config INVERSION
         bool "Enable Display Inversion"
@@ -104,7 +99,6 @@ menu "ST7789 Configuration"
             help
                 Portrait orientation.
 
-        # Add other orientations as needed
         config ORIENTATION_INVERTED_LANDSCAPE
             bool "Inverted Landscape"
             help
@@ -132,5 +126,128 @@ menu "ST7789 Configuration"
             help
                 Use SPI3_HOST. This is also called VSPI_HOST.
     endchoice
+
+menu "Color Tweaks"
+
+    config GAMMA_R
+        string "Gamma Correction for Red Channel"
+        default "1.8"
+        help
+            Set the gamma correction value for the red channel.
+            Acceptable values range from 1.0 to 4.0.
+
+    config GAMMA_G
+        string "Gamma Correction for Green Channel"
+        default "1.8"
+        help
+            Set the gamma correction value for the green channel.
+            Acceptable values range from 1.0 to 4.0.
+
+    config GAMMA_B
+        string "Gamma Correction for Blue Channel"
+        default "1.8"
+        help
+            Set the gamma correction value for the blue channel.
+            Acceptable values range from 1.0 to 4.0.
+
+    config CONTRAST
+        int "Contrast Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjust the overall contrast of the display.
+            - Positive values increase contrast.
+            - Negative values decrease contrast.
+            - 0 means no adjustment (default).
+
+    config BRIGHTNESS
+        int "Brightness Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjust the overall brightness of the display.
+            - Positive values increase brightness.
+            - Negative values decrease brightness.
+            - 0 means no adjustment (default).
+
+    comment "Shadows (Dark Areas)"
+
+    config SHADOWS_CYAN_RED
+        int "Shadows Cyan-Red Adjustment (%)"
+        range -100 100
+        default -10
+        help
+            Adjusts the Cyan-Red scale for shadows.
+            Negative values increase cyan; positive values increase red.
+
+    config SHADOWS_MAGENTA_GREEN
+        int "Shadows Magenta-Green Adjustment (%)"
+        range -100 100
+        default -10
+        help
+            Adjusts the Magenta-Green scale for shadows.
+            Negative values increase magenta; positive values increase green.
+
+    config SHADOWS_YELLOW_BLUE
+        int "Shadows Yellow-Blue Adjustment (%)"
+        range -100 100
+        default -20
+        help
+            Adjusts the Yellow-Blue scale for shadows.
+            Negative values increase yellow; positive values increase blue.
+
+    comment "Midtones (Medium Brightness Areas)"
+
+    config MIDTONES_CYAN_RED
+        int "Midtones Cyan-Red Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjusts the Cyan-Red scale for midtones.
+            Negative values increase cyan; positive values increase red.
+
+    config MIDTONES_MAGENTA_GREEN
+        int "Midtones Magenta-Green Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjusts the Magenta-Green scale for midtones.
+            Negative values increase magenta; positive values increase green.
+
+    config MIDTONES_YELLOW_BLUE
+        int "Midtones Yellow-Blue Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjusts the Yellow-Blue scale for midtones.
+            Negative values increase yellow; positive values increase blue.
+
+    comment "Highlights (Bright Areas)"
+
+    config HIGHLIGHTS_CYAN_RED
+        int "Highlights Cyan-Red Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjusts the Cyan-Red scale for highlights.
+            Negative values increase cyan; positive values increase red.
+
+    config HIGHLIGHTS_MAGENTA_GREEN
+        int "Highlights Magenta-Green Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjusts the Magenta-Green scale for highlights.
+            Negative values increase magenta; positive values increase green.
+
+    config HIGHLIGHTS_YELLOW_BLUE
+        int "Highlights Yellow-Blue Adjustment (%)"
+        range -100 100
+        default 0
+        help
+            Adjusts the Yellow-Blue scale for highlights.
+            Negative values increase yellow; positive values increase blue.
+
+    endmenu
 
 endmenu

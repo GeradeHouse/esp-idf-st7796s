@@ -23,6 +23,12 @@
 #define DIRECTION180    2
 #define DIRECTION270    3
 
+// Correctly define orientation constants for the display
+#define ORIENTATION_LANDSCAPE           0x48 // Landscape orientation
+#define ORIENTATION_PORTRAIT            0x28 // Portrait orientation
+#define ORIENTATION_INVERTED_LANDSCAPE  0x88 // Inverted landscape orientation
+#define ORIENTATION_INVERTED_PORTRAIT   0xE8 // Inverted portrait orientation
+
 typedef struct {
     uint16_t _width;
     uint16_t _height;
@@ -38,6 +44,23 @@ typedef struct {
     int16_t  _reset;
     spi_device_handle_t _SPIHandle;
 } TFT_t;
+
+typedef struct {
+    // For Shadows (dark areas)
+    int shadows_cyan_red;       // Range from -100 to 100 (%)
+    int shadows_magenta_green;  // Range from -100 to 100 (%)
+    int shadows_yellow_blue;    // Range from -100 to 100 (%)
+
+    // For Midtones (medium brightness areas)
+    int midtones_cyan_red;
+    int midtones_magenta_green;
+    int midtones_yellow_blue;
+
+    // For Highlights (bright areas)
+    int highlights_cyan_red;
+    int highlights_magenta_green;
+    int highlights_yellow_blue;
+} ColorTweaks;
 
 // SPI initialization
 void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t GPIO_CS,
@@ -57,6 +80,10 @@ void delayMS(int ms);
 
 // LCD initialization
 void lcdInit(TFT_t *dev, int width, int height, int offsetx, int offsety, uint8_t orientation);
+
+// Gamma and brightness/contrast initialization
+void init_gamma_values(void);
+void init_brightness_contrast_values(void);
 
 // Drawing functions
 void lcdDrawPixel(TFT_t *dev, uint16_t x, uint16_t y, uint16_t color);
@@ -79,7 +106,9 @@ void lcdDrawFillArrow(TFT_t *dev, uint16_t x0, uint16_t y0, uint16_t x1, uint16_
                       uint16_t w, uint16_t color);
 
 // Color conversion
-uint16_t rgb565_conv(uint16_t r, uint16_t g, uint16_t b);
+uint16_t rgb565_conv_with_color_tweaks(
+    uint16_t r, uint16_t g, uint16_t b
+);
 
 // Font drawing functions
 int lcdDrawChar(TFT_t *dev, FontxFile *fx, uint16_t x, uint16_t y,

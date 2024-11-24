@@ -6285,7 +6285,7 @@
             {
                 "children": [],
                 "depends_on": null,
-                "help": "GPIO number (IOxx) to SPI MOSI.\nSome GPIOs are used for other purposes (flash connections, etc.) and cannot be used as MOSI.",
+                "help": "GPIO number (IOxx) to SPI MOSI.",
                 "id": "MOSI_GPIO",
                 "name": "MOSI_GPIO",
                 "range": [
@@ -6298,7 +6298,7 @@
             {
                 "children": [],
                 "depends_on": null,
-                "help": "GPIO number (IOxx) to SPI SCLK.\nSome GPIOs are used for other purposes (flash connections, etc.) and cannot be used as SCLK.",
+                "help": "GPIO number (IOxx) to SPI SCLK.",
                 "id": "SCLK_GPIO",
                 "name": "SCLK_GPIO",
                 "range": [
@@ -6311,7 +6311,7 @@
             {
                 "children": [],
                 "depends_on": null,
-                "help": "GPIO number (IOxx) to SPI CS.\nWhen it is -1, CS isn't performed.\nSome GPIOs are used for other purposes (flash connections, etc.) and cannot be used as CS.",
+                "help": "GPIO number (IOxx) to SPI CS.\nWhen it is -1, CS isn't performed.",
                 "id": "CS_GPIO",
                 "name": "CS_GPIO",
                 "range": [
@@ -6324,7 +6324,7 @@
             {
                 "children": [],
                 "depends_on": null,
-                "help": "GPIO number (IOxx) to SPI DC.\nSome GPIOs are used for other purposes (flash connections, etc.) and cannot be used as DC.",
+                "help": "GPIO number (IOxx) to SPI DC.",
                 "id": "DC_GPIO",
                 "name": "DC_GPIO",
                 "range": [
@@ -6337,11 +6337,11 @@
             {
                 "children": [],
                 "depends_on": null,
-                "help": "GPIO number (IOxx) to RESET.\nSome GPIOs are used for other purposes (flash connections, etc.) and cannot be used as RESET.",
+                "help": "GPIO number (IOxx) to RESET.\nWhen it is -1, RESET isn't performed.",
                 "id": "RESET_GPIO",
                 "name": "RESET_GPIO",
                 "range": [
-                    0,
+                    -1,
                     48
                 ],
                 "title": "RESET GPIO number",
@@ -6350,7 +6350,7 @@
             {
                 "children": [],
                 "depends_on": null,
-                "help": "GPIO number (IOxx) to BACKLIGHT.\nWhen it is -1, BACKLIGHT isn't performed.\nSome GPIOs are used for other purposes (flash connections, etc.) and cannot be used as BACKLIGHT.",
+                "help": "GPIO number (IOxx) to BACKLIGHT.\nWhen it is -1, BACKLIGHT isn't performed.",
                 "id": "BL_GPIO",
                 "name": "BL_GPIO",
                 "range": [
@@ -6415,7 +6415,7 @@
                 ],
                 "depends_on": null,
                 "help": "Select the orientation of the display.",
-                "id": "st7789-configuration-display-orientation",
+                "id": "st7796s-configuration-display-orientation",
                 "name": "ORIENTATION",
                 "title": "Display Orientation",
                 "type": "choice"
@@ -6445,15 +6445,196 @@
                 ],
                 "depends_on": null,
                 "help": "Select SPI peripheral that controls this bus.",
-                "id": "st7789-configuration-spi-peripheral-that-controls-this-bus",
+                "id": "st7796s-configuration-spi-peripheral-that-controls-this-bus",
                 "name": "SPI_HOST",
                 "title": "SPI peripheral that controls this bus",
                 "type": "choice"
+            },
+            {
+                "children": [
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Set the gamma correction value for the red channel.\nAcceptable values range from 1.0 to 4.0.",
+                        "id": "GAMMA_R",
+                        "name": "GAMMA_R",
+                        "range": null,
+                        "title": "Gamma Correction for Red Channel",
+                        "type": "string"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Set the gamma correction value for the green channel.\nAcceptable values range from 1.0 to 4.0.",
+                        "id": "GAMMA_G",
+                        "name": "GAMMA_G",
+                        "range": null,
+                        "title": "Gamma Correction for Green Channel",
+                        "type": "string"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Set the gamma correction value for the blue channel.\nAcceptable values range from 1.0 to 4.0.",
+                        "id": "GAMMA_B",
+                        "name": "GAMMA_B",
+                        "range": null,
+                        "title": "Gamma Correction for Blue Channel",
+                        "type": "string"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjust the overall contrast of the display.\n- Positive values increase contrast.\n- Negative values decrease contrast.\n- 0 means no adjustment (default).",
+                        "id": "CONTRAST",
+                        "name": "CONTRAST",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Contrast Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjust the overall brightness of the display.\n- Positive values increase brightness.\n- Negative values decrease brightness.\n- 0 means no adjustment (default).",
+                        "id": "BRIGHTNESS",
+                        "name": "BRIGHTNESS",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Brightness Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Cyan-Red scale for shadows.\nNegative values increase cyan; positive values increase red.",
+                        "id": "SHADOWS_CYAN_RED",
+                        "name": "SHADOWS_CYAN_RED",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Shadows Cyan-Red Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Magenta-Green scale for shadows.\nNegative values increase magenta; positive values increase green.",
+                        "id": "SHADOWS_MAGENTA_GREEN",
+                        "name": "SHADOWS_MAGENTA_GREEN",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Shadows Magenta-Green Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Yellow-Blue scale for shadows.\nNegative values increase yellow; positive values increase blue.",
+                        "id": "SHADOWS_YELLOW_BLUE",
+                        "name": "SHADOWS_YELLOW_BLUE",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Shadows Yellow-Blue Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Cyan-Red scale for midtones.\nNegative values increase cyan; positive values increase red.",
+                        "id": "MIDTONES_CYAN_RED",
+                        "name": "MIDTONES_CYAN_RED",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Midtones Cyan-Red Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Magenta-Green scale for midtones.\nNegative values increase magenta; positive values increase green.",
+                        "id": "MIDTONES_MAGENTA_GREEN",
+                        "name": "MIDTONES_MAGENTA_GREEN",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Midtones Magenta-Green Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Yellow-Blue scale for midtones.\nNegative values increase yellow; positive values increase blue.",
+                        "id": "MIDTONES_YELLOW_BLUE",
+                        "name": "MIDTONES_YELLOW_BLUE",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Midtones Yellow-Blue Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Cyan-Red scale for highlights.\nNegative values increase cyan; positive values increase red.",
+                        "id": "HIGHLIGHTS_CYAN_RED",
+                        "name": "HIGHLIGHTS_CYAN_RED",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Highlights Cyan-Red Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Magenta-Green scale for highlights.\nNegative values increase magenta; positive values increase green.",
+                        "id": "HIGHLIGHTS_MAGENTA_GREEN",
+                        "name": "HIGHLIGHTS_MAGENTA_GREEN",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Highlights Magenta-Green Adjustment (%)",
+                        "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Adjusts the Yellow-Blue scale for highlights.\nNegative values increase yellow; positive values increase blue.",
+                        "id": "HIGHLIGHTS_YELLOW_BLUE",
+                        "name": "HIGHLIGHTS_YELLOW_BLUE",
+                        "range": [
+                            -100,
+                            100
+                        ],
+                        "title": "Highlights Yellow-Blue Adjustment (%)",
+                        "type": "int"
+                    }
+                ],
+                "depends_on": null,
+                "id": "st7796s-configuration-color-tweaks",
+                "title": "Color Tweaks",
+                "type": "menu"
             }
         ],
         "depends_on": null,
-        "id": "st7789-configuration",
-        "title": "ST7789 Configuration",
+        "id": "st7796s-configuration",
+        "title": "ST7796S Configuration",
         "type": "menu"
     },
     {

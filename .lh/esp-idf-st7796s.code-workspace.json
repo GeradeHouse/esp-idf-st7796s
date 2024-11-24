@@ -3,11 +3,19 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 2,
             "patches": [
                 {
                     "date": 1732323075701,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1732412439708,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -6,8 +6,9 @@\n \t],\n     \"settings\": {\n         \"files.associations\": {\n             \"bmpfile.h\": \"c\",\n-            \"pngle.h\": \"c\"\n+            \"pngle.h\": \"c\",\n+            \"esp_log.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732414360916,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -7,8 +7,9 @@\n     \"settings\": {\n         \"files.associations\": {\n             \"bmpfile.h\": \"c\",\n             \"pngle.h\": \"c\",\n-            \"esp_log.h\": \"c\"\n+            \"esp_log.h\": \"c\",\n+            \"rtc_io.h\": \"c\"\n         }\n     }\n }\n"
                 }
             ],
             "date": 1732323075701,

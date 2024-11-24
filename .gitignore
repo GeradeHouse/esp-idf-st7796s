@@ -65,3 +65,11 @@ main/*.o
 
 # Ignore partitions generated during build
 partitions.csv
+build/CMakeFiles/git-data/head-ref
+image_processing.ipynb
+esp32_images/*
+font/esp32.jpeg
+font/image.bmp
+esp-idf-st7796s.code-workspace
+.gitignore
+font/esp32.jpeg
