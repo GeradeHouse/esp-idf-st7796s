@@ -49,6 +49,7 @@ Makefile
 BuildAndFlash.ps1
 CleanBuildEnvironment.ps1
 ReconfigureBuildAndFlash.ps1
+Manage-History.ps1
 dependencies.lock
 
 # Ignore notebooks if not needed

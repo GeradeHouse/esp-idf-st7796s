@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 2,
+            "activePatchIndex": 19,
             "patches": [
                 {
                     "date": 1732323075701,
@@ -16,6 +16,74 @@
                 {
                     "date": 1732414360916,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -7,8 +7,9 @@\n     \"settings\": {\n         \"files.associations\": {\n             \"bmpfile.h\": \"c\",\n             \"pngle.h\": \"c\",\n-            \"esp_log.h\": \"c\"\n+            \"esp_log.h\": \"c\",\n+            \"rtc_io.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732560989434,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -8,8 +8,9 @@\n         \"files.associations\": {\n             \"bmpfile.h\": \"c\",\n             \"pngle.h\": \"c\",\n             \"esp_log.h\": \"c\",\n-            \"rtc_io.h\": \"c\"\n+            \"rtc_io.h\": \"c\",\n+            \"esp_vfs_fat.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732571313445,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -9,8 +9,9 @@\n             \"bmpfile.h\": \"c\",\n             \"pngle.h\": \"c\",\n             \"esp_log.h\": \"c\",\n             \"rtc_io.h\": \"c\",\n-            \"esp_vfs_fat.h\": \"c\"\n+            \"esp_vfs_fat.h\": \"c\",\n+            \"tusb_msc_storage.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732571816901,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -10,8 +10,9 @@\n             \"pngle.h\": \"c\",\n             \"esp_log.h\": \"c\",\n             \"rtc_io.h\": \"c\",\n             \"esp_vfs_fat.h\": \"c\",\n-            \"tusb_msc_storage.h\": \"c\"\n+            \"tusb_msc_storage.h\": \"c\",\n+            \"msc_device.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732572060927,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -11,8 +11,9 @@\n             \"esp_log.h\": \"c\",\n             \"rtc_io.h\": \"c\",\n             \"esp_vfs_fat.h\": \"c\",\n             \"tusb_msc_storage.h\": \"c\",\n-            \"msc_device.h\": \"c\"\n+            \"msc_device.h\": \"c\",\n+            \"tinyusb.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732572090943,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -12,8 +12,9 @@\n             \"rtc_io.h\": \"c\",\n             \"esp_vfs_fat.h\": \"c\",\n             \"tusb_msc_storage.h\": \"c\",\n             \"msc_device.h\": \"c\",\n-            \"tinyusb.h\": \"c\"\n+            \"tinyusb.h\": \"c\",\n+            \"tinyusb_types.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732572284293,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -13,8 +13,11 @@\n             \"esp_vfs_fat.h\": \"c\",\n             \"tusb_msc_storage.h\": \"c\",\n             \"msc_device.h\": \"c\",\n             \"tinyusb.h\": \"c\",\n-            \"tinyusb_types.h\": \"c\"\n+            \"tinyusb_types.h\": \"c\",\n+            \"esp_err.h\": \"c\",\n+            \"tusb.h\": \"c\",\n+            \"ledc.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732589793686,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -16,8 +16,9 @@\n             \"tinyusb.h\": \"c\",\n             \"tinyusb_types.h\": \"c\",\n             \"esp_err.h\": \"c\",\n             \"tusb.h\": \"c\",\n-            \"ledc.h\": \"c\"\n+            \"ledc.h\": \"c\",\n+            \"st7796s.h\": \"c\"\n         }\n     }\n }\n"
+                },
+                {
+                    "date": 1732625028665,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -19,6 +19,7 @@\n             \"tusb.h\": \"c\",\n             \"ledc.h\": \"c\",\n             \"st7796s.h\": \"c\"\n         }\n+        \n     }\n }\n"
+                },
+                {
+                    "date": 1732625035674,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -18,8 +18,12 @@\n             \"esp_err.h\": \"c\",\n             \"tusb.h\": \"c\",\n             \"ledc.h\": \"c\",\n             \"st7796s.h\": \"c\"\n-        }\n-        \n+        },\n+        // ---------------------------\n+        // 8. Terminal Configuration\n+        // ---------------------------\n+        \"terminal.integrated.scrollback\": 50000,\n+\n     }\n }\n"
+                },
+                {
+                    "date": 1732625041758,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -22,8 +22,7 @@\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n-        \"terminal.integrated.scrollback\": 50000,\n-\n+        \"terminal.integrated.scrollback\": 50000\n     }\n }\n"
+                },
+                {
+                    "date": 1732907240135,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -17,9 +17,10 @@\n             \"tinyusb_types.h\": \"c\",\n             \"esp_err.h\": \"c\",\n             \"tusb.h\": \"c\",\n             \"ledc.h\": \"c\",\n-            \"st7796s.h\": \"c\"\n+            \"st7796s.h\": \"c\",\n+            \"string.h\": \"c\"\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n"
+                },
+                {
+                    "date": 1732917517102,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -18,9 +18,10 @@\n             \"esp_err.h\": \"c\",\n             \"tusb.h\": \"c\",\n             \"ledc.h\": \"c\",\n             \"st7796s.h\": \"c\",\n-            \"string.h\": \"c\"\n+            \"string.h\": \"c\",\n+            \"decode_gif.h\": \"c\"\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n"
+                },
+                {
+                    "date": 1732921509835,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -19,9 +19,10 @@\n             \"tusb.h\": \"c\",\n             \"ledc.h\": \"c\",\n             \"st7796s.h\": \"c\",\n             \"string.h\": \"c\",\n-            \"decode_gif.h\": \"c\"\n+            \"esp_heap_caps.h\": \"c\",\n+            \"esp_psram.h\": \"c\"\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n"
+                },
+                {
+                    "date": 1733060815787,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -20,9 +20,10 @@\n             \"ledc.h\": \"c\",\n             \"st7796s.h\": \"c\",\n             \"string.h\": \"c\",\n             \"esp_heap_caps.h\": \"c\",\n-            \"esp_psram.h\": \"c\"\n+            \"esp_psram.h\": \"c\",\n+            \"ctype.h\": \"c\"\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n"
+                },
+                {
+                    "date": 1733062721427,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -21,9 +21,10 @@\n             \"st7796s.h\": \"c\",\n             \"string.h\": \"c\",\n             \"esp_heap_caps.h\": \"c\",\n             \"esp_psram.h\": \"c\",\n-            \"ctype.h\": \"c\"\n+            \"ctype.h\": \"c\",\n+            \"freertos.h\": \"c\"\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n"
+                },
+                {
+                    "date": 1733062722364,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -22,9 +22,10 @@\n             \"string.h\": \"c\",\n             \"esp_heap_caps.h\": \"c\",\n             \"esp_psram.h\": \"c\",\n             \"ctype.h\": \"c\",\n-            \"spi_master.h\": \"c\"\n+            \"freertos.h\": \"c\",\n+            \"gpio.h\": \"c\"\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n"
+                },
+                {
+                    "date": 1733084250637,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -28,7 +28,7 @@\n         },\n         // ---------------------------\n         // 8. Terminal Configuration\n         // ---------------------------\n-        \"terminal.integrated.scrollback\": 25000\n+        \"terminal.integrated.scrollback\": 5000\n     }\n }\n"
                 }
             ],
             "date": 1732323075701,

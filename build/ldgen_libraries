@@ -66,6 +66,7 @@ C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/esp_http_client/libe
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/esp_http_server/libesp_http_server.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/esp_https_ota/libesp_https_ota.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/esp_https_server/libesp_https_server.a
+C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/esp_psram/libesp_psram.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/esp_lcd/libesp_lcd.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/protobuf-c/libprotobuf-c.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/protocomm/libprotocomm.a
@@ -81,4 +82,7 @@ C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/spiffs/libspiffs.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/touch_element/libtouch_element.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/usb/libusb.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/wifi_provisioning/libwifi_provisioning.a
+C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/espressif__tinyusb/libespressif__tinyusb.a
+C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/nsgif/libnsgif.a
+C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/espressif__esp_tinyusb/libespressif__esp_tinyusb.a
 C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/main/libmain.a

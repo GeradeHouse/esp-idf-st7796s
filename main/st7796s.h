@@ -88,6 +88,11 @@ void init_brightness_contrast_values(void);
 // Drawing functions
 void lcdDrawPixel(TFT_t *dev, uint16_t x, uint16_t y, uint16_t color);
 void lcdDrawMultiPixels(TFT_t *dev, uint16_t x, uint16_t y, uint16_t size, uint16_t *colors);
+void lcdDrawBitmap(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *data);
+void lcdStartWrite(TFT_t *dev);
+void lcdSetWindow(TFT_t *dev, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+void lcdDrawBitmapRect(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w,
+                       uint16_t h, uint16_t *data);
 void lcdDrawFillRect(TFT_t *dev, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
 void lcdFillScreen(TFT_t *dev, uint16_t color);
 void lcdDrawLine(TFT_t *dev, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
