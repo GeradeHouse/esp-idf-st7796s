@@ -8,21 +8,41 @@
                 "${config:idf.espIdfPath}/components/**",
                 "${config:idf.espIdfPathWin}/components/**",
                 "${workspaceFolder}/**",
-                "${config:idf.espIdfPath}/components/freertos/include",
-                "${config:idf.espIdfPath}/components/driver/include",
+                "${config:idf.espIdfPath}/components/freertos/FreeRTOS-Kernel/include",
+                "${config:idf.espIdfPath}/components/freertos/FreeRTOS-Kernel-SMP/include",
+                "${config:idf.espIdfPath}/components/freertos/esp_additions/include",
+                "${config:idf.espIdfPath}/components/freertos/config",
+
+
+                "${config:idf.espIdfPath}/components/driver/i2c/include",
+                "${config:idf.espIdfPath}/components/driver/deprecated",
+                "${config:idf.espIdfPath}/components/driver/twai/include",
+                "${config:idf.espIdfPath}/components/driver/touch_sensor/include",
+
                 "${config:idf.espIdfPath}/components/esp_common/include",
                 "${config:idf.espIdfPath}/components/esp_system/include",
                 "${config:idf.espIdfPath}/components/esp_rom/include",
                 "${config:idf.espIdfPath}/components/spi_flash/include",
-                "${config:idf.espIdfPath}/components/esp_log/include",
-                "${config:idf.espIdfPath}/components/esp_vfs/include",
-                "${config:idf.espIdfPath}/components/esp_spiffs/include"
+
+                "${config:idf.espIdfPath}/components/log/include",
+                "${config:idf.espIdfPath}/components/fatfs/vfs",
+                "${config:idf.espIdfPath}/components/spiffs/include",
+                "${config:idf.espIdfPath}/components/esp_psram/include",
+
+                "${workspaceFolder}/managed_components/espressif__tinyusb/src",
+                "${workspaceFolder}/managed_components/espressif__tinyusb/src/class",
+                "${workspaceFolder}/managed_components/espressif__tinyusb/src/common",
+                "${workspaceFolder}/managed_components/espressif__tinyusb/src/device",
+                "${workspaceFolder}/managed_components/espressif__tinyusb/src/host",
+                "${workspaceFolder}/managed_components/espressif__tinyusb/src/osal",
+                "${workspaceFolder}/managed_components/espressif__tinyusb/src/typec"
             ],
             "browse": {
                 "path": [
                     "${config:idf.espIdfPath}/components",
                     "${config:idf.espIdfPathWin}/components",
-                    "${workspaceFolder}"
+                    "${workspaceFolder}",
+                    "${workspaceFolder}/managed_components/espressif__tinyusb/src"
                 ],
                 "limitSymbolsToIncludedHeaders": true
             }

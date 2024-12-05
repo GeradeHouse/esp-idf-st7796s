@@ -1,9 +1,13 @@
+# main/CMakeLists.txt
+
 # Define the list of source files
 set(srcs "main.c"
          "st7796s.c"
          "fontx.c"
          "decode_png.c"
          "pngle.c"
+         "decode_gif.c"
+         "decode_rgb565ani.c"
          )
 
 # Conditionally include decode_jpeg.c for the ESP32-S3 target
@@ -15,9 +19,16 @@ endif()
 idf_component_register(
     SRCS ${srcs}                  # Source files
     INCLUDE_DIRS "."              # Include current directory for headers
+                 "${CMAKE_SOURCE_DIR}/managed_components/espressif__tinyusb/src"
+                 "${CMAKE_SOURCE_DIR}/managed_components/espressif__tinyusb/src/class/msc"
     REQUIRES driver               # Public dependencies
              freertos
              esp_system
              spiffs
-    PRIV_REQUIRES esp_timer       # Private dependencies
+             fatfs
+             espressif__tinyusb
+             sdmmc
+    PRIV_REQUIRES nsgif           # Private dependencies
+                  esp_timer
+                  esp_psram       # Add esp_psram to the private requirements
 )

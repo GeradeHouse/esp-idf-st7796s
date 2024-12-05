@@ -8,8 +8,10 @@
 # ------------------------------ Configuration -----------------------------
 
 # Define the paths to the build and managed_components directories
-$buildPath = "C:\Users\imede.IME-DEKKER\esp\vdjcontroller2\build"
-$managedComponentsPath = "C:\Users\imede.IME-DEKKER\esp\vdjcontroller2\managed_components"
+$buildPath = "C:\Users\imede.IME-DEKKER\esp\esp-idf-st7796s\build"
+$managedComponentsPath = "C:\Users\imede.IME-DEKKER\esp\esp-idf-st7796s\managed_components"
+
+
 
 # Path to idf.py (ensure it's in the PATH or provide the full path)
 $idfPyPath = "idf.py"  # Replace with full path if necessary, e.g., "C:\Path\To\idf.py"

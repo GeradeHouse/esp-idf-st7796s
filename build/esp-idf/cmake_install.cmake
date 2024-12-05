@@ -544,6 +544,21 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/espressif__tinyusb/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/nsgif/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/espressif__esp_tinyusb/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build/esp-idf/main/cmake_install.cmake")
 endif()
 

@@ -16,6 +16,10 @@
  * - Efficient display updates
  * - Resource management and de-initialization
  * 
+ * Note:
+ * Make sure that all instances of %u with %" PRIu32 " in ESP_LOGI and ESP_LOGD statements where the corresponding argument is of type uint32_t.
+ * Ensure that the PRIu32 macro from <inttypes.h> is used for proper formatting of uint32_t types.
+ *
  * Author: GeradeHouse Productions
  * Date: November 23, 2024
  */
@@ -48,7 +52,7 @@
 
 static const int SPI_Command_Mode = 0;
 static const int SPI_Data_Mode = 1;
-static const int SPI_Frequency = SPI_MASTER_FREQ_40M;
+static const int SPI_Frequency = SPI_MASTER_FREQ_80M;
 
 // Initialize ColorTweaks with values from menuconfig
 ColorTweaks color_tweaks = {
@@ -76,38 +80,50 @@ static int contrast_percent = 0;
 
 // Function to initialize gamma correction values
 void init_gamma_values(void) {
+    ESP_LOGI(TAG, "Initializing gamma correction values");
     // Parse gamma correction values from configuration with sanity checks
     gamma_red = strtof(CONFIG_GAMMA_R, NULL);
     if (gamma_red < 1.0f || gamma_red > 4.0f) {
         ESP_LOGW(TAG, "Invalid GAMMA_R value '%s'; using default 2.2", CONFIG_GAMMA_R);
         gamma_red = 2.2f;
+    } else {
+        ESP_LOGI(TAG, "Gamma Red set to %.2f", gamma_red);
     }
 
     gamma_green = strtof(CONFIG_GAMMA_G, NULL);
     if (gamma_green < 1.0f || gamma_green > 4.0f) {
         ESP_LOGW(TAG, "Invalid GAMMA_G value '%s'; using default 2.2", CONFIG_GAMMA_G);
         gamma_green = 2.2f;
+    } else {
+        ESP_LOGI(TAG, "Gamma Green set to %.2f", gamma_green);
     }
 
     gamma_blue = strtof(CONFIG_GAMMA_B, NULL);
     if (gamma_blue < 1.0f || gamma_blue > 4.0f) {
         ESP_LOGW(TAG, "Invalid GAMMA_B value '%s'; using default 2.2", CONFIG_GAMMA_B);
         gamma_blue = 2.2f;
+    } else {
+        ESP_LOGI(TAG, "Gamma Blue set to %.2f", gamma_blue);
     }
 }
 
 // Function to initialize brightness and contrast values
 void init_brightness_contrast_values(void) {
+    ESP_LOGI(TAG, "Initializing brightness and contrast values");
     brightness_percent = CONFIG_BRIGHTNESS;
     if (brightness_percent < -100 || brightness_percent > 100) {
         ESP_LOGW(TAG, "Invalid BRIGHTNESS value '%d'; using default 0", brightness_percent);
         brightness_percent = 0;
+    } else {
+        ESP_LOGI(TAG, "Brightness set to %d%%", brightness_percent);
     }
 
     contrast_percent = CONFIG_CONTRAST;
     if (contrast_percent < -100 || contrast_percent > 100) {
         ESP_LOGW(TAG, "Invalid CONTRAST value '%d'; using default 0", contrast_percent);
         contrast_percent = 0;
+    } else {
+        ESP_LOGI(TAG, "Contrast set to %d%%", contrast_percent);
     }
 }
 
@@ -116,48 +132,63 @@ void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t G
     esp_err_t ret;
 
     // Initialize CS pin
-    ESP_LOGI(TAG, "GPIO_CS=%d", GPIO_CS);
+    ESP_LOGI(TAG, "Initializing GPIO_CS=%d", GPIO_CS);
     if (GPIO_CS >= 0) {
-        gpio_reset_pin(GPIO_CS);  
+        gpio_reset_pin(GPIO_CS);
         gpio_set_direction(GPIO_CS, GPIO_MODE_OUTPUT);
         gpio_set_level(GPIO_CS, 1);
+        ESP_LOGI(TAG, "GPIO_CS=%d set to HIGH", GPIO_CS);
+    } else {
+        ESP_LOGW(TAG, "GPIO_CS not defined (value: %d)", GPIO_CS);
     }
 
     // Initialize DC pin
-    ESP_LOGI(TAG, "GPIO_DC=%d", GPIO_DC);
+    ESP_LOGI(TAG, "Initializing GPIO_DC=%d", GPIO_DC);
     gpio_reset_pin(GPIO_DC);
     gpio_set_direction(GPIO_DC, GPIO_MODE_OUTPUT);
     gpio_set_level(GPIO_DC, 0);
+    ESP_LOGI(TAG, "GPIO_DC=%d set to LOW", GPIO_DC);
 
     // Initialize RESET pin
-    ESP_LOGI(TAG, "GPIO_RESET=%d", GPIO_RESET);
+    ESP_LOGI(TAG, "Initializing GPIO_RESET=%d", GPIO_RESET);
     if (GPIO_RESET >= 0) {
         gpio_reset_pin(GPIO_RESET);
         gpio_set_direction(GPIO_RESET, GPIO_MODE_OUTPUT);
         gpio_set_level(GPIO_RESET, 1);  // Ensure the reset pin starts high
+        ESP_LOGI(TAG, "GPIO_RESET=%d set to HIGH", GPIO_RESET);
         delayMS(100);
         gpio_set_level(GPIO_RESET, 0);  // Pulse reset pin
+        ESP_LOGI(TAG, "GPIO_RESET=%d set to LOW (pulse)", GPIO_RESET);
         delayMS(100);
         gpio_set_level(GPIO_RESET, 1);  // Set back to high
+        ESP_LOGI(TAG, "GPIO_RESET=%d set to HIGH (release)", GPIO_RESET);
         delayMS(100);
+    } else {
+        ESP_LOGW(TAG, "GPIO_RESET not defined (value: %d)", GPIO_RESET);
     }
 
     // Initialize SPI bus
-    ESP_LOGI(TAG, "GPIO_MOSI=%d", GPIO_MOSI);
-    ESP_LOGI(TAG, "GPIO_SCLK=%d", GPIO_SCLK);
+    ESP_LOGI(TAG, "Initializing SPI bus with GPIO_MOSI=%d, GPIO_SCLK=%d", GPIO_MOSI, GPIO_SCLK);
     spi_bus_config_t buscfg = {
         .mosi_io_num = GPIO_MOSI,
         .miso_io_num = -1,
         .sclk_io_num = GPIO_SCLK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 6 * 1024,
+        .max_transfer_sz = 35 * 1024, // Increase to 35KB to handle larger transactions
         .flags = SPICOMMON_BUSFLAG_MASTER,
     };
 
-    ret = spi_bus_initialize(HOST_ID, &buscfg, SPI_DMA_CH_AUTO);
-    ESP_LOGI(TAG, "spi_bus_initialize=%d", ret);
-    assert(ret == ESP_OK);
+    ESP_LOGI(TAG, "SPI Bus Configuration: MOSI=%d, SCLK=%d, Max Transfer Size=%d bytes",
+             buscfg.mosi_io_num, buscfg.sclk_io_num, buscfg.max_transfer_sz);
+
+    // Use DMA channel
+    ret = spi_bus_initialize(HOST_ID, &buscfg, SPI_DMA_CH_AUTO); // Use automatic DMA channel allocation
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "spi_bus_initialize failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    ESP_LOGI(TAG, "spi_bus_initialize successful");
 
     spi_device_interface_config_t devcfg;
     memset(&devcfg, 0, sizeof(devcfg));
@@ -172,10 +203,14 @@ void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t G
         devcfg.spics_io_num = -1;
     }
 
+    ESP_LOGI(TAG, "Adding SPI device to bus");
     spi_device_handle_t handle;
     ret = spi_bus_add_device(HOST_ID, &devcfg, &handle);
-    ESP_LOGI(TAG, "spi_bus_add_device=%d", ret);
-    assert(ret == ESP_OK);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "spi_bus_add_device failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    ESP_LOGI(TAG, "spi_bus_add_device successful, handle=%p", (void *)handle);
 
     // Store GPIO numbers and SPI handle in device structure
     dev->_dc = GPIO_DC;
@@ -184,12 +219,15 @@ void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t G
     dev->_SPIHandle = handle;
 
     // Initialize Backlight pin AFTER SPI initialization
-    ESP_LOGI(TAG, "GPIO_BL=%d", GPIO_BL);
+    ESP_LOGI(TAG, "Initializing GPIO_BL=%d", GPIO_BL);
     if (GPIO_BL >= 0) {
         gpio_reset_pin(GPIO_BL);
         gpio_set_direction(GPIO_BL, GPIO_MODE_OUTPUT);
         gpio_set_level(GPIO_BL, 0);  // Set GPIO_BL low initially
+        ESP_LOGI(TAG, "GPIO_BL=%d set to LOW (initial state)", GPIO_BL);
         ESP_LOGI(TAG, "Backlight pin initialized on GPIO_BL=%d", GPIO_BL);
+    } else {
+        ESP_LOGW(TAG, "GPIO_BL not defined (value: %d)", GPIO_BL);
     }
 }
 
@@ -201,11 +239,16 @@ bool spi_master_write_byte(spi_device_handle_t SPIHandle, const uint8_t *Data, s
         memset(&SPITransaction, 0, sizeof(spi_transaction_t));
         SPITransaction.length = DataLength * 8;
         SPITransaction.tx_buffer = Data;
-        ret = spi_device_polling_transmit(SPIHandle, &SPITransaction);
+
+        ESP_LOGD(TAG, "Sending SPI byte data: Length=%zu bytes", DataLength);
+        ret = spi_device_transmit(SPIHandle, &SPITransaction); // Changed to blocking transmit
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "spi_device_polling_transmit failed: %s", esp_err_to_name(ret));
             return false;
         }
+        ESP_LOGD(TAG, "SPI byte data transmitted successfully");
+    } else {
+        ESP_LOGW(TAG, "spi_master_write_byte called with DataLength=0");
     }
 
     return true;
@@ -549,6 +592,107 @@ void lcdDrawFillRect(TFT_t *dev, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t
     spi_master_write_color(dev, color, size);
 }
 
+// Draw a bitmap to the display
+// x: X coordinate (start position)
+// y: Y coordinate (start position)
+// w: Width of the bitmap
+// h: Height of the bitmap
+// data: Pointer to the bitmap data (RGB565 format)
+void lcdDrawBitmap(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *data) {
+    // Check if coordinates are within the display area
+    if ((x + w) > dev->_width || (y + h) > dev->_height)
+        return;
+
+    // Adjust for any offsets
+    uint16_t x1 = x + dev->_offsetx;
+    uint16_t y1 = y + dev->_offsety;
+    uint16_t x2 = x1 + w - 1;
+    uint16_t y2 = y1 + h - 1;
+
+    // Set the column address (X coordinates)
+    spi_master_write_command(dev, 0x2A); // Column Address Set
+    spi_master_write_addr(dev, x1, x2);
+
+    // Set the row address (Y coordinates)
+    spi_master_write_command(dev, 0x2B); // Row Address Set
+    spi_master_write_addr(dev, y1, y2);
+
+    // Write the pixel data to the display memory
+    spi_master_write_command(dev, 0x2C); // Memory Write
+
+    uint32_t data_size = w * h * 2; // Size in bytes
+    uint8_t *data_ptr = (uint8_t *)data;
+
+    // Transmit data in chunks if necessary
+    uint32_t max_chunk_size = 32 * 1024; // 32KB
+    uint32_t remaining = data_size;
+
+    while (remaining > 0) {
+        uint32_t chunk_size = (remaining > max_chunk_size) ? max_chunk_size : remaining;
+
+        spi_transaction_t trans;
+        memset(&trans, 0, sizeof(trans));
+        trans.length = chunk_size * 8; // Length in bits
+        trans.tx_buffer = data_ptr;
+        gpio_set_level(dev->_dc, SPI_Data_Mode);
+
+        // Transmit the data
+        esp_err_t ret = spi_device_polling_transmit(dev->_SPIHandle, &trans);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "lcdDrawBitmap: SPI transmit failed: %s", esp_err_to_name(ret));
+            return;
+        }
+
+        data_ptr += chunk_size;
+        remaining -= chunk_size;
+    }
+}
+
+// New function to draw a small rectangle bitmap (optimized for small regions)
+// x: X coordinate (start position)
+// y: Y coordinate (start position)
+// w: Width of the rectangle
+// h: Height of the rectangle
+// data: Pointer to the pixel data (RGB565 format)
+void lcdDrawBitmapRect(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *data) {
+    // Check if coordinates are within the display area
+    if ((x + w) > dev->_width || (y + h) > dev->_height)
+        return;
+
+    // Adjust for any offsets
+    uint16_t x1 = x + dev->_offsetx;
+    uint16_t y1 = y + dev->_offsety;
+    uint16_t x2 = x1 + w - 1;
+    uint16_t y2 = y1 + h - 1;
+
+    // Set the column address (X coordinates)
+    spi_master_write_command(dev, 0x2A); // Column Address Set
+    spi_master_write_addr(dev, x1, x2);
+
+    // Set the row address (Y coordinates)
+    spi_master_write_command(dev, 0x2B); // Row Address Set
+    spi_master_write_addr(dev, y1, y2);
+
+    // Write the pixel data to the display memory
+    spi_master_write_command(dev, 0x2C); // Memory Write
+
+    uint32_t data_size = w * h * 2; // Size in bytes
+    uint8_t *data_ptr = (uint8_t *)data;
+
+    // For small rectangles, transmit data in a single transaction
+    spi_transaction_t trans;
+    memset(&trans, 0, sizeof(trans));
+    trans.length = data_size * 8; // Length in bits
+    trans.tx_buffer = data_ptr;
+    gpio_set_level(dev->_dc, SPI_Data_Mode);
+
+    esp_err_t ret = spi_device_polling_transmit(dev->_SPIHandle, &trans);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "lcdDrawBitmapRect: SPI transmit failed: %s", esp_err_to_name(ret));
+        return;
+    }
+}
+
 // Display OFF
 void lcdDisplayOff(TFT_t *dev) {
     spi_master_write_command(dev, 0x28);  // DISPOFF: Display Off
@@ -566,6 +710,7 @@ void lcdFillScreen(TFT_t *dev, uint16_t color) {
     // Draw a filled rectangle covering the whole screen
     lcdDrawFillRect(dev, 0, 0, dev->_width - 1, dev->_height - 1, color);
 }
+
 
 // Draw line
 // x1:Start X coordinate
