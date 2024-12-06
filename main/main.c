@@ -1,7 +1,7 @@
 // main/main.c
 
-// Set the local log level for this file to ERROR
-#define LOG_LOCAL_LEVEL ESP_LOG_ERROR
+// Set the local log level for this file to DEBUG to see INFO and DEBUG logs
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,14 +45,14 @@
 
 #include <miniz.h>  // Use the updated standalone miniz.h
 
-#include "st7796s.h"  // Updated to include the correct header file
+#include "st7796s.h"
 #include "fontx.h"
 #include "bmpfile.h"
 #include "decode_jpeg.h"
 #include "decode_png.h"
 #include "pngle.h"
 #include "decode_gif.h"
-#include "decode_rgb565ani.h" // Include the header for RGB565ANI parser
+#include "decode_rgb565ani.h"
 
 #include "sdkconfig.h" // Ensure sdkconfig.h is included to access CONFIG_* variables
 
@@ -138,6 +138,18 @@ static bool enable_usb_connection = false;  // Global flag to control USB connec
 #define PLAY_RGB565ANI  true
 #define PLAY_BMP        false
 #define PLAY_PNG        false
+
+// Use one button (GPIO4) to enter deep sleep and wake up
+// We'll use EXT0 wakeup on a specific level. Let's choose wake-up on line going HIGH (level=1).
+// To ensure no immediate wake-up, we will enter deep sleep while the button is pressed (line=0).
+// On release, line goes high and triggers wake-up.
+
+// Button configurations
+#define BUTTON_GPIO GPIO_NUM_4
+#define BUTTON_ACTIVE_LEVEL 0  // Active low button
+#define BUTTON_TAG "BUTTON"
+
+static QueueHandle_t button_queue = NULL;
 
 // Function to list files in SPIFFS directory
 static void SPIFFS_Directory(char * path) {
@@ -590,6 +602,8 @@ TickType_t ColorTest(TFT_t * dev, int width, int height) {
     ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
     return diffTick;
 }
+
+
 TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
     TickType_t startTick, endTick, diffTick;
     startTick = xTaskGetTickCount();
@@ -1238,7 +1252,6 @@ void st7796s_task(void *pvParameters)
     }
 }
 
-
 void init_sdcard(void) {
     ESP_LOGI(TAG, "Initializing SD card");
 
@@ -1606,9 +1619,6 @@ bool tud_msc_is_writable_cb(uint8_t lun)
 }
 
 
-
-
-
 // USB Task for TinyUSB stack
 void usb_task(void *param)
 {
@@ -1628,14 +1638,6 @@ void usb_task(void *param)
     }
 }
 
-// Define GPIO number and active level for the button
-#define BUTTON_GPIO GPIO_NUM_4
-#define BUTTON_ACTIVE_LEVEL 0  // 0 for Active Low (button press connects GPIO to GND)
-
-#define BUTTON_TAG "BUTTON"  // Logging tag for button functionality
-
-// Queue handle for button events
-static QueueHandle_t button_queue = NULL;
 
 // ISR handler for the button
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
@@ -1655,7 +1657,8 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
     }
 }
 
-// Task to handle button press events
+// The task handling the sleep/wake button (GPIO4)
+// The task handling the sleep/wake button (GPIO4)
 static void button_task(void* arg) {
     uint32_t io_num;
     TickType_t last_press = 0;
@@ -1664,44 +1667,52 @@ static void button_task(void* arg) {
     ESP_LOGI(BUTTON_TAG, "Button task started");
 
     while (1) {
+        ESP_LOGD(BUTTON_TAG, "Button task: Waiting for queue events");
         if (xQueueReceive(button_queue, &io_num, portMAX_DELAY)) {
             ESP_LOGD(BUTTON_TAG, "Button task: Received event for GPIO %" PRIu32, io_num);
 
             TickType_t current_time = xTaskGetTickCount();
             if ((current_time - last_press) > debounce_time) {
-                ESP_LOGI(BUTTON_TAG, "Button pressed on GPIO %" PRIu32 ", preparing to enter deep sleep", io_num);
                 last_press = current_time;
 
-                // Disable USB if it's enabled
-                if (enable_usb_connection) {
-                    enable_usb_connection = false;
-                    ESP_LOGI(BUTTON_TAG, "USB connection disabled");
+                // Positive edge: button just released (low->high).
+                vTaskDelay(pdMS_TO_TICKS(50)); // small delay to ensure stability
+
+                if (gpio_get_level(BUTTON_GPIO) == 1) {
+                    ESP_LOGI(BUTTON_TAG, "Button release stable, preparing for deep sleep");
+
+                    // Keep RTC peripherals powered if needed
+                    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+
+                    // Initialize the pin as RTC IO and enable internal pull-up for stability
+                    rtc_gpio_init(BUTTON_GPIO);
+                    rtc_gpio_pullup_en(BUTTON_GPIO);
+
+                    // Enable EXT0 wakeup on level=0 (wake up when button is pressed)
+                    esp_err_t err = esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0);
+                    if (err != ESP_OK) {
+                        ESP_LOGE(BUTTON_TAG, "Failed to enable ext0 wakeup: %s", esp_err_to_name(err));
+                    } else {
+                        ESP_LOGI(BUTTON_TAG, "ext0 wakeup enabled for GPIO %d, wake on LOW level", BUTTON_GPIO);
+                    }
+
+                    ESP_LOGI(BUTTON_TAG, "Entering deep sleep now");
+                    esp_deep_sleep_start();
+
+                    ESP_LOGE(BUTTON_TAG, "Deep sleep failed to initiate");
+                } else {
+                    ESP_LOGW(BUTTON_TAG, "Button not high after release, not sleeping");
                 }
 
-                // Perform any other necessary cleanup here
-                // Example: Turn off LEDs, save state, etc.
-                ESP_LOGI(BUTTON_TAG, "Performing cleanup before deep sleep");
-
-                // Log before entering deep sleep
-                ESP_LOGI(BUTTON_TAG, "Entering deep sleep now");
-
-                // Initiate deep sleep
-                esp_deep_sleep_start();
-
-                // If deep_sleep_start returns, log an error
-                ESP_LOGE(BUTTON_TAG, "Deep sleep failed to initiate");
             } else {
-                ESP_LOGI(BUTTON_TAG, "Button press on GPIO %" PRIu32 " ignored due to debounce", io_num);
+                ESP_LOGI(BUTTON_TAG, "Button press ignored due to debounce");
             }
         }
     }
 }
 
-void app_main(void)
-{
-    // Suppress DEBUG and INFO logs from spi_master
-    // esp_log_level_set("spi_master", ESP_LOG_ERROR);
 
+void app_main(void) {
     ESP_LOGI(TAG, "Starting app_main");
 
     ESP_LOGI(TAG, "Initializing SPIFFS");
@@ -1713,21 +1724,14 @@ void app_main(void)
         .format_if_mount_failed = true
     };
 
-    // Initialize and mount SPIFFS filesystem
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
     if (ret != ESP_OK)
     {
-        if (ret == ESP_FAIL)
-        {
+        if (ret == ESP_FAIL) {
             ESP_LOGE(TAG, "Failed to mount or format filesystem");
-        }
-        else if (ret == ESP_ERR_NOT_FOUND)
-        {
+        } else if (ret == ESP_ERR_NOT_FOUND) {
             ESP_LOGE(TAG, "Failed to find SPIFFS partition");
-        }
-        else
-        {
+        } else {
             ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
         }
         return;
@@ -1744,41 +1748,42 @@ void app_main(void)
         ESP_LOGI(TAG, "Partition size: total: %u, used: %u", (unsigned int)total, (unsigned int)used);
     }
 
-    // List files in the SPIFFS directory
+    // List files in SPIFFS
     SPIFFS_Directory("/spiffs/");
 
     // Create a mutex for SD card access
     sdcard_mutex = xSemaphoreCreateMutex();
-    if (sdcard_mutex == NULL)
-    {
+    if (sdcard_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create SD card mutex");
         return;
     }
 
-    // Initialize SD card using a separate function
     init_sdcard();
 
-    // Check wakeup reason
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
-        ESP_LOGI(BUTTON_TAG, "Woke up from deep sleep by external button press");
-        // Optional: Perform any actions needed after wakeup
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
+        ESP_LOGI(BUTTON_TAG, "Woke up from deep sleep by button press (ext0 wake on LOW)");
+        // After waking up, just reconfigure the pin normally
+        rtc_gpio_deinit(BUTTON_GPIO);
     } else {
         ESP_LOGI(BUTTON_TAG, "Device booted normally");
     }
 
-    // Configure the button GPIO as input with internal pull-up/down
-    gpio_config_t io_conf = {
+    // Configure the button GPIO for positive edge interrupt (release)
+    // When button released: line goes from low to high.
+    // We'll sleep at release time, so that pressing the button (line=1->0) wakes the device.
+    gpio_config_t io_conf_sleep = {
         .pin_bit_mask = (1ULL << BUTTON_GPIO),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = (BUTTON_ACTIVE_LEVEL == 0) ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = (BUTTON_ACTIVE_LEVEL == 1) ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE // Interrupt on falling edge for active low
+        // Use POSEDGE to detect when the button is released (line goes from low to high)
+        .intr_type = GPIO_INTR_POSEDGE
     };
-    gpio_config(&io_conf);
-    ESP_LOGI(TAG, "Configured GPIO %d as input with %s pull", BUTTON_GPIO, (BUTTON_ACTIVE_LEVEL == 0) ? "pull-up" : "pull-down");
+    gpio_config(&io_conf_sleep);
+    ESP_LOGI(TAG, "Configured button GPIO %d as input with %s pull",
+             BUTTON_GPIO, (BUTTON_ACTIVE_LEVEL == 0) ? "pull-up" : "pull-down");
 
-    // Create a queue to handle button events
     button_queue = xQueueCreate(10, sizeof(uint32_t));
     if (button_queue == NULL) {
         ESP_LOGE(BUTTON_TAG, "Failed to create button_queue");
@@ -1796,27 +1801,17 @@ void app_main(void)
     gpio_isr_handler_add(BUTTON_GPIO, gpio_isr_handler, (void*) BUTTON_GPIO);
     ESP_LOGI(BUTTON_TAG, "GPIO ISR handler added for GPIO %d", BUTTON_GPIO);
 
-    // Enable wakeup on button press using EXT1 wakeup
-    uint64_t wakeup_mask = (1ULL << BUTTON_GPIO);
-    esp_err_t sleep_ret = esp_sleep_enable_ext1_wakeup(
-        wakeup_mask,
-        (BUTTON_ACTIVE_LEVEL == 0) ? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH
-    );
-    if (sleep_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to enable EXT1 wakeup: %s", esp_err_to_name(sleep_ret));
-    } else {
-        ESP_LOGI(TAG, "EXT1 wakeup enabled for GPIO %d", BUTTON_GPIO);
-    }
+    // We do NOT enable wakeup here. We'll enable ext0 wakeup right before sleeping.
 
-    // Create the button handling task
-    BaseType_t button_task_ret = xTaskCreate(button_task, "button_task", 2048, NULL, 10, NULL);
+    BaseType_t button_task_ret = xTaskCreate(button_task, "button_task", 4096, NULL, 5, NULL);
     if (button_task_ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create button_task");
         return;
     }
     ESP_LOGI(TAG, "button_task created successfully");
 
-    // Initialize TinyUSB only if USB connection is enabled
+    // If USB connection is enabled
+    extern bool enable_usb_connection;
     if (enable_usb_connection) {
         ESP_LOGI(TAG, "Initializing TinyUSB stack");
         tinyusb_config_t tusb_cfg = {};
@@ -1829,26 +1824,20 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
 
-    // Disable touch functionality on GPIO0
-    rtc_gpio_deinit(GPIO_NUM_0); // Deinitialize RTC functions on GPIO0
-
-    // Configure GPIO0 as a regular GPIO pin
+    rtc_gpio_deinit(GPIO_NUM_0);
     gpio_reset_pin(GPIO_NUM_0);
-    gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT); // Set as input
-    gpio_pullup_dis(GPIO_NUM_0);  // Disable pull-up resistor
-    gpio_pulldown_dis(GPIO_NUM_0); // Disable pull-down resistor
+    gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT);
+    gpio_pullup_dis(GPIO_NUM_0);
+    gpio_pulldown_dis(GPIO_NUM_0);
 
-    // Initialize LEDC to control the onboard RGB LED on GPIO38
-    // Define the LEDC channel and timer configurations
     #define LEDC_TIMER              LEDC_TIMER_0
     #define LEDC_MODE               LEDC_LOW_SPEED_MODE
-    #define LEDC_OUTPUT_IO          (38) // GPIO38
+    #define LEDC_OUTPUT_IO          (38)
     #define LEDC_CHANNEL            LEDC_CHANNEL_0
-    #define LEDC_DUTY_RES           LEDC_TIMER_8_BIT // Set duty resolution to 8 bits
-    #define LEDC_DUTY               (0) // Set duty to 0%
-    #define LEDC_FREQUENCY          (5000) // Frequency in Hertz. Set frequency at 5 kHz
+    #define LEDC_DUTY_RES           LEDC_TIMER_8_BIT
+    #define LEDC_DUTY               (0)
+    #define LEDC_FREQUENCY          (5000)
 
-    // Prepare and then apply the LEDC timer configuration
     ledc_timer_config_t ledc_timer = {
         .speed_mode       = LEDC_MODE,
         .timer_num        = LEDC_TIMER,
@@ -1858,23 +1847,20 @@ void app_main(void)
     };
     ledc_timer_config(&ledc_timer);
 
-    // Prepare and then apply the LEDC channel configuration
     ledc_channel_config_t ledc_channel = {
         .speed_mode     = LEDC_MODE,
         .channel        = LEDC_CHANNEL,
         .timer_sel      = LEDC_TIMER,
         .intr_type      = LEDC_INTR_DISABLE,
         .gpio_num       = LEDC_OUTPUT_IO,
-        .duty           = LEDC_DUTY, // Set duty to 0%
+        .duty           = LEDC_DUTY,
         .hpoint         = 0
     };
     ledc_channel_config(&ledc_channel);
 
-    // Configure LED_PIN as output to control the onboard LED if necessary
     gpio_reset_pin(LED_PIN);
     gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(LED_PIN, 0); // Initialize LED to OFF
+    gpio_set_level(LED_PIN, 0);
 
-    // Create the display task with lower priority
     xTaskCreate(st7796s_task, "ST7796S", 1024 * 6, NULL, 2, NULL);
 }

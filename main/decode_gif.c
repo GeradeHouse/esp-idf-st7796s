@@ -282,7 +282,7 @@ esp_err_t decode_gif(TFT_t *dev, const char *file, int screenWidth, int screenHe
         // Draw each row from the 2D pixels array
         for (int y = 0; y < gif_info->height; y++) {
             // Feed watchdog every few lines to prevent watchdog timeout
-            if ((y % 32) == 0) {
+            if ((y % 160) == 0) {
                 // vTaskDelay(1);
             }
 
@@ -291,12 +291,12 @@ esp_err_t decode_gif(TFT_t *dev, const char *file, int screenWidth, int screenHe
         }
 
         frame_count++;
-        if (frame_count % 10 == 0) {
+        if (frame_count % 12 == 0) {
             ESP_LOGI(TAG, "Processed %" PRIu32 " frames", frame_count);
         }
 
-        // **Added Condition to Stop After 72 Frames**
-        if (frame_count >= 48) {
+        // **Added Condition to Stop After 24 Frames**
+        if (frame_count >= 24) {
             ESP_LOGI(TAG, "Reached 48 frames. Stopping GIF playback.");
             animation_complete = true;
             break;

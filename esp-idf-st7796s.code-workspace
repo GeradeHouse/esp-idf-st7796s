@@ -27,7 +27,9 @@
             "gpio.h": "c",
             "esp_task_wdt.h": "c",
             "decode_rgb565ani.h": "c",
-            "esp_random.h": "c"
+            "esp_random.h": "c",
+            "task.h": "c",
+            "time.h": "c"
         },
         // ---------------------------
         // 8. Terminal Configuration

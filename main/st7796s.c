@@ -175,7 +175,7 @@ void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t G
         .sclk_io_num = GPIO_SCLK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 35 * 1024, // Increase to 35KB to handle larger transactions
+        .max_transfer_sz = 307200, // Set to accommodate large transfers if needed
         .flags = SPICOMMON_BUSFLAG_MASTER,
     };
 
@@ -241,9 +241,18 @@ bool spi_master_write_byte(spi_device_handle_t SPIHandle, const uint8_t *Data, s
         SPITransaction.tx_buffer = Data;
 
         ESP_LOGD(TAG, "Sending SPI byte data: Length=%zu bytes", DataLength);
-        ret = spi_device_transmit(SPIHandle, &SPITransaction); // Changed to blocking transmit
+        // Use asynchronous API
+        ret = spi_device_queue_trans(SPIHandle, &SPITransaction, portMAX_DELAY);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "spi_device_polling_transmit failed: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "spi_device_queue_trans failed: %s", esp_err_to_name(ret));
+            return false;
+        }
+
+        // Wait for transaction to complete
+        spi_transaction_t *rtrans;
+        ret = spi_device_get_trans_result(SPIHandle, &rtrans, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "spi_device_get_trans_result failed: %s", esp_err_to_name(ret));
             return false;
         }
         ESP_LOGD(TAG, "SPI byte data transmitted successfully");
@@ -297,16 +306,30 @@ bool spi_master_write_color(TFT_t *dev, uint16_t color, uint32_t size) {
             Byte[i * 2 + 1] = color & 0xFF;
         }
         gpio_set_level(dev->_dc, SPI_Data_Mode);
-        if (!spi_master_write_byte(dev->_SPIHandle, Byte, chunk_size)) {
-            ESP_LOGE(TAG, "spi_master_write_color failed during data transmission");
+
+        spi_transaction_t SPITransaction;
+        memset(&SPITransaction, 0, sizeof(spi_transaction_t));
+        SPITransaction.length = chunk_size * 8;
+        SPITransaction.tx_buffer = Byte;
+
+        esp_err_t ret = spi_device_queue_trans(dev->_SPIHandle, &SPITransaction, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "spi_master_write_color: spi_device_queue_trans failed: %s", esp_err_to_name(ret));
             return false;
         }
+
+        spi_transaction_t *rtrans;
+        ret = spi_device_get_trans_result(dev->_SPIHandle, &rtrans, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "spi_master_write_color: spi_device_get_trans_result failed: %s", esp_err_to_name(ret));
+            return false;
+        }
+
         len -= chunk_size;
     }
     return true;
 }
 
-// Add 202001
 bool spi_master_write_colors(TFT_t *dev, uint16_t *colors, uint16_t size) {
     uint8_t Byte[1024];
     uint32_t index = 0;
@@ -322,10 +345,25 @@ bool spi_master_write_colors(TFT_t *dev, uint16_t *colors, uint16_t size) {
             index++;
         }
         gpio_set_level(dev->_dc, SPI_Data_Mode);
-        if (!spi_master_write_byte(dev->_SPIHandle, Byte, chunk_size)) {
-            ESP_LOGE(TAG, "spi_master_write_colors failed during data transmission");
+
+        spi_transaction_t SPITransaction;
+        memset(&SPITransaction, 0, sizeof(spi_transaction_t));
+        SPITransaction.length = chunk_size * 8;
+        SPITransaction.tx_buffer = Byte;
+
+        esp_err_t ret = spi_device_queue_trans(dev->_SPIHandle, &SPITransaction, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "spi_master_write_colors: spi_device_queue_trans failed: %s", esp_err_to_name(ret));
             return false;
         }
+
+        spi_transaction_t *rtrans;
+        ret = spi_device_get_trans_result(dev->_SPIHandle, &rtrans, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "spi_master_write_colors: spi_device_get_trans_result failed: %s", esp_err_to_name(ret));
+            return false;
+        }
+
         len -= chunk_size;
     }
     return true;
@@ -598,12 +636,13 @@ void lcdDrawFillRect(TFT_t *dev, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t
 // w: Width of the bitmap
 // h: Height of the bitmap
 // data: Pointer to the bitmap data (RGB565 format)
+// For lcdDrawBitmap, we also need to use asynchronous SPI calls.
+// Here's where we implement the pipeline approach in lcdDrawBitmap:
 void lcdDrawBitmap(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *data) {
     // Check if coordinates are within the display area
     if ((x + w) > dev->_width || (y + h) > dev->_height)
         return;
 
-    // Adjust for any offsets
     uint16_t x1 = x + dev->_offsetx;
     uint16_t y1 = y + dev->_offsety;
     uint16_t x2 = x1 + w - 1;
@@ -623,29 +662,69 @@ void lcdDrawBitmap(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, u
     uint32_t data_size = w * h * 2; // Size in bytes
     uint8_t *data_ptr = (uint8_t *)data;
 
-    // Transmit data in chunks if necessary
     uint32_t max_chunk_size = 32 * 1024; // 32KB
     uint32_t remaining = data_size;
+
+    // Variables for pipeline
+    spi_transaction_t trans; // Declare transaction outside loop so it remains valid.
+    spi_transaction_t *rtrans = NULL; // For receiving completed transactions
+    spi_transaction_t *pending_trans = NULL; // Track a pending transaction
+
+    // We now implement pipelining:
+    // On each iteration, if we had a pending transaction from previous iteration,
+    // we wait for it to finish before queueing a new one. This allows SPI and CPU to overlap:
+    // CPU prepares next chunk while SPI is still busy from previous chunk.
 
     while (remaining > 0) {
         uint32_t chunk_size = (remaining > max_chunk_size) ? max_chunk_size : remaining;
 
-        spi_transaction_t trans;
+        // Before we queue the next transaction, if there's a pending transaction,
+        // wait for it to complete. This gives SPI time to finish previous chunk
+        // while we were calculating chunk_size or doing other work.
+        if (pending_trans != NULL) {
+            esp_err_t ret = spi_device_get_trans_result(dev->_SPIHandle, &rtrans, portMAX_DELAY);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "lcdDrawBitmap: spi_device_get_trans_result failed: %s", esp_err_to_name(ret));
+                return;
+            }
+            // Now the previous transaction is done, we can reuse 'trans' for this chunk.
+            pending_trans = NULL;
+        }
+
+        // Prepare the transaction for this chunk
         memset(&trans, 0, sizeof(trans));
         trans.length = chunk_size * 8; // Length in bits
         trans.tx_buffer = data_ptr;
         gpio_set_level(dev->_dc, SPI_Data_Mode);
 
-        // Transmit the data
-        esp_err_t ret = spi_device_polling_transmit(dev->_SPIHandle, &trans);
+        // Queue the transaction without waiting for immediate completion
+        esp_err_t ret = spi_device_queue_trans(dev->_SPIHandle, &trans, portMAX_DELAY);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "lcdDrawBitmap: SPI transmit failed: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "lcdDrawBitmap: spi_device_queue_trans failed: %s", esp_err_to_name(ret));
             return;
         }
+
+        // Now we have a pending transaction in flight
+        pending_trans = &trans;
 
         data_ptr += chunk_size;
         remaining -= chunk_size;
     }
+
+    // After finishing the loop, we may have one last pending transaction.
+    // Wait for it to complete.
+    if (pending_trans != NULL) {
+        esp_err_t ret = spi_device_get_trans_result(dev->_SPIHandle, &rtrans, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "lcdDrawBitmap: Final spi_device_get_trans_result failed: %s", esp_err_to_name(ret));
+            return;
+        }
+        pending_trans = NULL;
+    }
+
+    // Now all transactions are done, and we effectively overlapped
+    // the transaction time of previous chunks with the preparation time of next chunks.
+    // This can lead to higher effective frame rates.
 }
 
 // New function to draw a small rectangle bitmap (optimized for small regions)
