@@ -25,7 +25,7 @@ static const char *TAG = "decode_rgb565ani";
 void swap_bytes(uint16_t *buffer, size_t num_pixels) {
     for (size_t i = 0; i < num_pixels; i++) {
         uint16_t pixel = buffer[i];
-        buffer[i] = (pixel << 8) | (pixel >> 8);
+        buffer[i] = (uint16_t)((pixel << 8) | (pixel >> 8));
     }
 }
 
@@ -83,16 +83,9 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
         return ESP_FAIL;
     }
 
-    // Read format flag
-    uint8_t format_flag;
-    if (fread(&format_flag, sizeof(uint8_t), 1, fp) != 1) {
-        ESP_LOGE(TAG, "Failed to read format flag");
-        fclose(fp);
-        esp_task_wdt_delete(NULL);
-        return ESP_FAIL;
-    }
+    // Note: Previously, a format_flag was read here, but we have removed it as requested.
 
-    ESP_LOGI(TAG, "Frame count: %" PRIu32 ", width: %" PRIu16 ", height: %" PRIu16 ", format flag: %d", frame_count, width, height, format_flag);
+    ESP_LOGI(TAG, "Frame count: %" PRIu32 ", width: %" PRIu16 ", height: %" PRIu16, frame_count, width, height);
 
     // Verify dimensions match the screen
     if (width != screenWidth || height != screenHeight) {
@@ -108,7 +101,7 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
     srand((unsigned int)esp_random());
 
     // Calculate the size of a full frame buffer
-    size_t frame_buffer_size = width * height * 2; // Each pixel is 2 bytes
+    size_t frame_buffer_size = (size_t)width * (size_t)height * 2; // Each pixel is 2 bytes
 
     // Allocate two frame buffers in PSRAM for double buffering
     uint8_t *frame_buffer_a = heap_caps_malloc(frame_buffer_size, MALLOC_CAP_SPIRAM);
@@ -123,7 +116,7 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
     }
 
     // Allocate a small DMA-capable buffer for transferring data to the display
-    size_t dma_buffer_size = width * 160 * 2; // Adjust the number of lines per DMA transfer (e.g., 160 lines)
+    size_t dma_buffer_size = (size_t)width * 160 * 2; // Revert back to using 160 lines per chunk
     uint8_t *dma_buffer = heap_caps_malloc(dma_buffer_size, MALLOC_CAP_DMA);
     if (!dma_buffer) {
         ESP_LOGE(TAG, "Failed to allocate DMA buffer");
@@ -153,12 +146,7 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
             }
         }
 
-        // Read frame type flag
-        uint8_t frame_type;
-        if (fread(&frame_type, sizeof(uint8_t), 1, fp) != 1) {
-            ESP_LOGE(TAG, "Failed to read frame type flag");
-            break;
-        }
+        // Note: The frame_type byte read is also removed as requested. We no longer expect or use it.
 
         frame_number++;
 
@@ -171,24 +159,25 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
         }
 
         // Swap bytes for correct endianness
-        swap_bytes((uint16_t *)next_frame_buffer, width * height);
+        // swap_bytes((uint16_t *)next_frame_buffer, (size_t)(width * height));
 
         // Transfer data from PSRAM buffer to display in chunks
         size_t lines_remaining = height;
         uint16_t current_line = 0;
         while (lines_remaining > 0) {
-            size_t lines_to_transfer = (lines_remaining > 160) ? 160 : lines_remaining; // Adjust lines per transfer as needed
-            size_t bytes_to_transfer = width * lines_to_transfer * 2;
+            size_t lines_to_transfer = (lines_remaining > 160) ? 160 : lines_remaining;
+            size_t bytes_to_transfer = (size_t)width * lines_to_transfer * 2;
 
             // Copy data from PSRAM to DMA-capable buffer
-            memcpy(dma_buffer, next_frame_buffer + current_line * width * 2, bytes_to_transfer);
+            memcpy(dma_buffer, next_frame_buffer + (current_line * width * 2), bytes_to_transfer);
+
 
             // Display the chunk
-            lcdDrawBitmap(dev, 0, current_line, width, lines_to_transfer, (uint16_t *)dma_buffer);
+            lcdDrawBitmap(dev, 0, current_line, width, (uint16_t)lines_to_transfer, (uint16_t *)dma_buffer);
 
             // Update counters
             lines_remaining -= lines_to_transfer;
-            current_line += lines_to_transfer;
+            current_line += (uint16_t)lines_to_transfer;
 
             // Feed the watchdog to prevent reset
             esp_task_wdt_reset();
@@ -198,7 +187,6 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
         uint8_t *temp = current_frame_buffer;
         current_frame_buffer = next_frame_buffer;
         next_frame_buffer = temp;
-
 
         // Feed the watchdog to prevent reset
         esp_task_wdt_reset();
@@ -222,7 +210,10 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
 
     // Calculate frames per second (FPS)
     float elapsed_time_sec = diffTick * portTICK_PERIOD_MS / 1000.0f; // Convert ticks to seconds
-    float fps = frame_number / elapsed_time_sec;
+    float fps = 0.0f;
+    if (elapsed_time_sec > 0.0f) {
+        fps = frame_number / elapsed_time_sec;
+    }
 
     // Log playback statistics
     ESP_LOGI(TAG, "Playback completed - Total frames: %" PRIu32 ", Elapsed time: %.3f seconds, FPS: %.3f",

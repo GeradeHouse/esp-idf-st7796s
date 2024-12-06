@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "st7789",
-    "project_version":    "fab1a20-dirty",
+    "project_version":    "2b39afd-dirty",
     "project_path":       "C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s",
     "idf_path":           "C:/Users/imede.IME-DEKKER/esp/v5.3.1/esp-idf",
     "build_dir":          "C:/Users/imede.IME-DEKKER/esp/esp-idf-st7796s/build",
