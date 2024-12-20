@@ -3,8 +3,10 @@
 #ifndef MAIN_ST7796S_H_
 #define MAIN_ST7796S_H_
 
-#include "driver/spi_master.h"
-#include "fontx.h"
+#include <stdbool.h> // Added this include to ensure bool is defined
+#include "fontx.h"    // We still need fontx.h for font functions
+
+// Removed #include "driver/spi_master.h" since we're no longer using SPI.
 
 // Color definitions in RGB565 format
 #define RED             0xF800
@@ -42,7 +44,10 @@ typedef struct {
     int16_t  _dc;
     int16_t  _bl;
     int16_t  _reset;
-    spi_device_handle_t _SPIHandle;
+    // Removed spi_device_handle_t _SPIHandle; since SPI is no longer used.
+    // For parallel interface, we add write/read control pins.
+    int16_t  _wr;
+    int16_t  _rd;
 } TFT_t;
 
 typedef struct {
@@ -62,18 +67,22 @@ typedef struct {
     int highlights_yellow_blue;
 } ColorTweaks;
 
-// SPI initialization
-void spi_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t GPIO_CS,
-                     int16_t GPIO_DC, int16_t GPIO_RESET, int16_t GPIO_BL);
+// Previously we had SPI initialization and SPI communication functions.
+// Now we introduce parallel initialization and communication functions instead.
 
-// SPI communication functions
-bool spi_master_write_byte(spi_device_handle_t SPIHandle, const uint8_t *Data, size_t DataLength);
-bool spi_master_write_command(TFT_t *dev, uint8_t cmd);
-bool spi_master_write_data_byte(TFT_t *dev, uint8_t data);
-bool spi_master_write_data_word(TFT_t *dev, uint16_t data);
-bool spi_master_write_addr(TFT_t *dev, uint16_t addr1, uint16_t addr2);
-bool spi_master_write_color(TFT_t *dev, uint16_t color, uint32_t size);
-bool spi_master_write_colors(TFT_t *dev, uint16_t *colors, uint16_t size);
+// Parallel initialization
+void parallel_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t GPIO_CS,
+                          int16_t GPIO_DC, int16_t GPIO_RESET, int16_t GPIO_BL,
+                          int16_t GPIO_WR, int16_t GPIO_RD);
+
+// Parallel communication functions (replacing SPI functions)
+bool parallel_master_write_byte(TFT_t *dev, const uint8_t *Data, size_t DataLength);
+bool parallel_master_write_command(TFT_t *dev, uint8_t cmd);
+bool parallel_master_write_data_byte(TFT_t *dev, uint8_t data);
+bool parallel_master_write_data_word(TFT_t *dev, uint16_t data);
+bool parallel_master_write_addr(TFT_t *dev, uint16_t addr1, uint16_t addr2);
+bool parallel_master_write_color(TFT_t *dev, uint16_t color, uint32_t size);
+bool parallel_master_write_colors(TFT_t *dev, uint16_t *colors, uint16_t size);
 
 // Delay function
 void delayMS(int ms);
@@ -89,6 +98,7 @@ void init_brightness_contrast_values(void);
 void lcdDrawPixel(TFT_t *dev, uint16_t x, uint16_t y, uint16_t color);
 void lcdDrawMultiPixels(TFT_t *dev, uint16_t x, uint16_t y, uint16_t size, uint16_t *colors);
 void lcdDrawBitmap(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *data);
+// We keep these prototypes as is, to adhere strictly to the request:
 void lcdStartWrite(TFT_t *dev);
 void lcdSetWindow(TFT_t *dev, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 void lcdDrawBitmapRect(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w,

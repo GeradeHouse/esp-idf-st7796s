@@ -83,7 +83,6 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
         return ESP_FAIL;
     }
 
-    // Note: Previously, a format_flag was read here, but we have removed it as requested.
 
     ESP_LOGI(TAG, "Frame count: %" PRIu32 ", width: %" PRIu16 ", height: %" PRIu16, frame_count, width, height);
 
@@ -146,8 +145,6 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
             }
         }
 
-        // Note: The frame_type byte read is also removed as requested. We no longer expect or use it.
-
         frame_number++;
 
         // Full frame
@@ -157,9 +154,6 @@ esp_err_t play_rgb565ani(TFT_t *dev, const char *file, int screenWidth, int scre
             ESP_LOGE(TAG, "Failed to read full frame data, expected %zu bytes, got %zu bytes", frame_buffer_size, bytes_read);
             break;
         }
-
-        // Swap bytes for correct endianness
-        // swap_bytes((uint16_t *)next_frame_buffer, (size_t)(width * height));
 
         // Transfer data from PSRAM buffer to display in chunks
         size_t lines_remaining = height;

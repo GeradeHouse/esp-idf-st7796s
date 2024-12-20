@@ -32,50 +32,114 @@ menu "ST7796S Configuration"
         help
             When your TFT has an offset (Y), set it.
 
-    config MOSI_GPIO
-        int "MOSI GPIO number"
-        range 0 GPIO_RANGE_MAX
-        default 23
-        help
-            GPIO number (IOxx) to SPI MOSI.
+    menu "Parallel Interface Configuration"
+        # The OLED display parallel pins listed:
+        # GND and VCC are power lines and typically not configurable via GPIO.
+        # CD, DC, WR, RD, RST, D0-D7, BL need to be assignable to GPIO pins.
 
-    config SCLK_GPIO
-        int "SCLK GPIO number"
-        range 0 GPIO_RANGE_MAX
-        default 18
-        help
-            GPIO number (IOxx) to SPI SCLK.
+        config CD_GPIO
+            int "CD (Chip Select) GPIO number"
+            range -1 GPIO_RANGE_MAX
+            default -1
+            help
+                GPIO number (IOxx) for the display Chip Select line.
+                When it is -1, it won't be controlled by software.
 
-    config CS_GPIO
-        int "CS GPIO number"
-        range -1 GPIO_RANGE_MAX
-        default -1
-        help
-            GPIO number (IOxx) to SPI CS.
-            When it is -1, CS isn't performed.
+        config DC_GPIO
+            int "DC (Data/Command) GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 19
+            help
+                GPIO number (IOxx) for the Data/Command line.
 
-    config DC_GPIO
-        int "DC GPIO number"
-        range 0 GPIO_RANGE_MAX
-        default 19
-        help
-            GPIO number (IOxx) to SPI DC.
+        config WR_GPIO
+            int "WR (Write) GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 18
+            help
+                GPIO number (IOxx) for the Write strobe line.
 
-    config RESET_GPIO
-        int "RESET GPIO number"
-        range -1 GPIO_RANGE_MAX
-        default -1
-        help
-            GPIO number (IOxx) to RESET.
-            When it is -1, RESET isn't performed.
+        config RD_GPIO
+            int "RD (Read) GPIO number"
+            range -1 GPIO_RANGE_MAX
+            default -1
+            help
+                GPIO number (IOxx) for the Read strobe line.
+                When it is -1, read operations are not performed.
 
-    config BL_GPIO
-        int "BACKLIGHT GPIO number"
-        range -1 GPIO_RANGE_MAX
-        default 5
-        help
-            GPIO number (IOxx) to BACKLIGHT.
-            When it is -1, BACKLIGHT isn't performed.
+        config RST_GPIO
+            int "RESET GPIO number"
+            range -1 GPIO_RANGE_MAX
+            default -1
+            help
+                GPIO number (IOxx) for the Reset line.
+                When it is -1, no hardware reset is performed.
+
+        config D0_GPIO
+            int "D0 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 5
+            help
+                GPIO number (IOxx) for data line D0.
+
+        config D1_GPIO
+            int "D1 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 6
+            help
+                GPIO number (IOxx) for data line D1.
+
+        config D2_GPIO
+            int "D2 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 7
+            help
+                GPIO number (IOxx) for data line D2.
+
+        config D3_GPIO
+            int "D3 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 8
+            help
+                GPIO number (IOxx) for data line D3.
+
+        config D4_GPIO
+            int "D4 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 9
+            help
+                GPIO number (IOxx) for data line D4.
+
+        config D5_GPIO
+            int "D5 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 10
+            help
+                GPIO number (IOxx) for data line D5.
+
+        config D6_GPIO
+            int "D6 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 11
+            help
+                GPIO number (IOxx) for data line D6.
+
+        config D7_GPIO
+            int "D7 GPIO number"
+            range 0 GPIO_RANGE_MAX
+            default 12
+            help
+                GPIO number (IOxx) for data line D7.
+
+        config BL_GPIO
+            int "BACKLIGHT GPIO number"
+            range -1 GPIO_RANGE_MAX
+            default 14
+            help
+                GPIO number (IOxx) to control BACKLIGHT.
+                When it is -1, no backlight control is performed.
+
+    endmenu
 
     config INVERSION
         bool "Enable Display Inversion"
@@ -108,23 +172,6 @@ menu "ST7796S Configuration"
             bool "Inverted Portrait"
             help
                 Inverted Portrait orientation.
-    endchoice
-
-    choice SPI_HOST
-        prompt "SPI peripheral that controls this bus"
-        default SPI2_HOST
-        help
-            Select SPI peripheral that controls this bus.
-
-        config SPI2_HOST
-            bool "SPI2_HOST"
-            help
-                Use SPI2_HOST. This is also called HSPI_HOST.
-
-        config SPI3_HOST
-            bool "SPI3_HOST"
-            help
-                Use SPI3_HOST. This is also called VSPI_HOST.
     endchoice
 
 menu "Color Tweaks"

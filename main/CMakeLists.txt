@@ -8,6 +8,7 @@ set(srcs "main.c"
          "pngle.c"
          "decode_gif.c"
          "decode_rgb565ani.c"
+         "gpio_led.c"
          )
 
 # Conditionally include decode_jpeg.c for the ESP32-S3 target
@@ -30,5 +31,6 @@ idf_component_register(
              sdmmc
     PRIV_REQUIRES nsgif           # Private dependencies
                   esp_timer
-                  esp_psram       # Add esp_psram to the private requirements
+                  esp_psram
+                #   esp_hw_support  # Add this line to include the internal hw support APIs
 )

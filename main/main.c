@@ -33,15 +33,18 @@
 #include "esp_system.h"
 #include "esp_vfs.h"
 #include "esp_spiffs.h"
+#include "esp_random.h"         // Include for esp_random()
+#include "esp_timer.h"          // Required for esp_timer_get_time()
+#include "esp_sleep.h" // Include sleep-related functions and types
+// #include "esp_private/esp_clk.h"
 
-#include "driver/ledc.h"      // Include LEDC driver definitions
-#include "driver/gpio.h"      // Include GPIO driver definitions
-#include "driver/rtc_io.h"    // Include RTC GPIO driver definitions
+
+#include "driver/ledc.h"        // Include GPIO driver definitions
+#include "driver/rtc_io.h"      // Include RTC GPIO driver definitions
 
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "driver/sdmmc_host.h"
-#include "esp_log.h"
 
 #include <miniz.h>  // Use the updated standalone miniz.h
 
@@ -53,6 +56,8 @@
 #include "pngle.h"
 #include "decode_gif.h"
 #include "decode_rgb565ani.h"
+#include "gpio_led.h" // Include the GPIO and LED configuration header
+
 
 #include "sdkconfig.h" // Ensure sdkconfig.h is included to access CONFIG_* variables
 
@@ -61,7 +66,6 @@
 #include "class/msc/msc.h"           // Include MSC class definitions
 #include "class/msc/msc_device.h"    // Include MSC device definitions
 
-#include "esp_sleep.h" // Include sleep-related functions and types
 
 #ifndef SCSI_SENSE_NOT_READY
 #define SCSI_SENSE_NOT_READY 0x02
@@ -139,17 +143,18 @@ static bool enable_usb_connection = false;  // Global flag to control USB connec
 #define PLAY_BMP        false
 #define PLAY_PNG        false
 
-// Use one button (GPIO4) to enter deep sleep and wake up
-// We'll use EXT0 wakeup on a specific level. Let's choose wake-up on line going HIGH (level=1).
-// To ensure no immediate wake-up, we will enter deep sleep while the button is pressed (line=0).
-// On release, line goes high and triggers wake-up.
+static QueueHandle_t button_queue = NULL;
 
 // Button configurations
 #define BUTTON_GPIO GPIO_NUM_4
 #define BUTTON_ACTIVE_LEVEL 0  // Active low button
 #define BUTTON_TAG "BUTTON"
 
-static QueueHandle_t button_queue = NULL;
+// RTC memory to store the timestamp before sleep
+RTC_DATA_ATTR uint64_t sleep_start_time = 0;
+
+SemaphoreHandle_t sdcard_mutex; // Mutex for SD card access
+
 
 // Function to list files in SPIFFS directory
 static void SPIFFS_Directory(char * path) {
@@ -163,7 +168,6 @@ static void SPIFFS_Directory(char * path) {
     closedir(dir);
 }
 
-SemaphoreHandle_t sdcard_mutex; // Mutex for SD card access
 
 TickType_t FillTest(TFT_t * dev, int width, int height) {
     TickType_t startTick, endTick, diffTick;
@@ -221,7 +225,6 @@ TickType_t ArrowTest(TFT_t * dev, FontxFile *fx, int width, int height) {
     uint8_t fontWidth;
     uint8_t fontHeight;
     GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-	//ESP_LOGI(__FUNCTION__,"fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
     uint16_t xpos;
     uint16_t ypos;
@@ -231,7 +234,7 @@ TickType_t ArrowTest(TFT_t * dev, FontxFile *fx, int width, int height) {
 
     lcdFillScreen(dev, BLACK);
 
-    strcpy((char *)ascii, "ST7796S");  // Updated the display text
+    strcpy((char *)ascii, "ST7796S");
     if (width < height) {
         xpos = ((width - fontHeight) / 2) - 1;
         ypos = (height - (strlen((char *)ascii) * fontWidth)) / 2;
@@ -285,7 +288,6 @@ TickType_t DirectionTest(TFT_t * dev, FontxFile *fx, int width, int height) {
     uint8_t fontWidth;
     uint8_t fontHeight;
     GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-	//ESP_LOGI(__FUNCTION__,"fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
     uint16_t color;
     lcdFillScreen(dev, BLACK);
@@ -326,7 +328,6 @@ TickType_t HorizontalTest(TFT_t * dev, FontxFile *fx, int width, int height) {
     uint8_t fontWidth;
     uint8_t fontHeight;
     GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-	//ESP_LOGI(__FUNCTION__,"fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
     uint16_t color;
     lcdFillScreen(dev, BLACK);
@@ -377,7 +378,6 @@ TickType_t VerticalTest(TFT_t * dev, FontxFile *fx, int width, int height) {
     uint8_t fontWidth;
     uint8_t fontHeight;
     GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-	//ESP_LOGI(__FUNCTION__,"fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
     uint16_t color;
     lcdFillScreen(dev, BLACK);
@@ -424,16 +424,15 @@ TickType_t LineTest(TFT_t * dev, int width, int height) {
     startTick = xTaskGetTickCount();
 
     uint16_t color;
-	//lcdFillScreen(dev, WHITE);
     lcdFillScreen(dev, BLACK);
     color = RED;
     for (int ypos = 0; ypos < height; ypos = ypos + 10) {
         lcdDrawLine(dev, 0, ypos, width, ypos, color);
-        vTaskDelay(1); // Yield after each line
+        vTaskDelay(1);
     }
     for (int xpos = 0; xpos < width; xpos = xpos + 10) {
         lcdDrawLine(dev, xpos, 0, xpos, height, color);
-        vTaskDelay(1); // Yield after each line
+        vTaskDelay(1);
     }
 
     endTick = xTaskGetTickCount();
@@ -447,7 +446,6 @@ TickType_t CircleTest(TFT_t * dev, int width, int height) {
     startTick = xTaskGetTickCount();
 
     uint16_t color;
-	//lcdFillScreen(dev, WHITE);
     lcdFillScreen(dev, BLACK);
     color = CYAN;
     uint16_t xpos = width / 2;
@@ -468,7 +466,6 @@ TickType_t RectAngleTest(TFT_t * dev, int width, int height) {
     startTick = xTaskGetTickCount();
 
     uint16_t color;
-	//lcdFillScreen(dev, WHITE);
     lcdFillScreen(dev, BLACK);
 	color = CYAN;
 	uint16_t xpos = width / 2;
@@ -500,7 +497,6 @@ TickType_t TriangleTest(TFT_t * dev, int width, int height) {
     startTick = xTaskGetTickCount();
 
     uint16_t color;
-	//lcdFillScreen(dev, WHITE);
     lcdFillScreen(dev, BLACK);
     color = CYAN;
     uint16_t xpos = width / 2;
@@ -535,12 +531,10 @@ TickType_t RoundRectTest(TFT_t * dev, int width, int height) {
     uint16_t color;
     uint16_t limit = width;
     if (width > height) limit = height;
-	//lcdFillScreen(dev, WHITE);
     lcdFillScreen(dev, BLACK);
     color = BLUE;
     for (int i = 5; i < limit; i = i + 5) {
         if (i > (limit - i - 1)) break;
-		//ESP_LOGI(__FUNCTION__, "i=%d, width-i-1=%d",i, width-i-1);
         lcdDrawRoundRect(dev, i, i, (width - i - 1), (height - i - 1), 10, color);
         vTaskDelay(1);
     }
@@ -566,7 +560,7 @@ TickType_t FillRectTest(TFT_t * dev, int width, int height) {
         red=rand()%255;
         green=rand()%255;
         blue=rand()%255;
-        color=rgb565_conv_with_color_tweaks(red, green, blue); // Updated function call
+        color=rgb565_conv_with_color_tweaks(red, green, blue);
         uint16_t xpos=rand()%width;
         uint16_t ypos=rand()%height;
         uint16_t size=rand()%(width/5);
@@ -590,7 +584,6 @@ TickType_t ColorTest(TFT_t * dev, int width, int height) {
     uint16_t delta = height/16;
     uint16_t ypos = 0;
     for(int i=0;i<16;i++) {
-		//ESP_LOGI(__FUNCTION__, "color=0x%x",color);
         lcdDrawFillRect(dev, 0, ypos, width-1, ypos+delta, color);
         color = color >> 1;
         ypos = ypos + delta;
@@ -611,10 +604,8 @@ TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
     lcdSetFontDirection(dev, 0);
     lcdFillScreen(dev, BLACK);
 
-    // Try to acquire the mutex with zero wait time
     if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
     {
-        // Open the requested file
         FILE* fp = fopen(file, "rb");
         if (fp == NULL) {
             ESP_LOGW(__FUNCTION__, "File not found [%s]", file);
@@ -622,7 +613,6 @@ TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
             return 0;
         }
 
-        // Read BMP header
         bmpfile_t *result = (bmpfile_t*)malloc(sizeof(bmpfile_t));
         size_t ret = fread(result->header.magic, 1, 2, fp);
         assert(ret == 2);
@@ -643,7 +633,6 @@ TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
         ret = fread(&result->header.offset, 4, 1, fp);
         assert(ret == 1);
 
-        // Read DIB header
         ret = fread(&result->dib.header_sz, 4, 1, fp);
         assert(ret == 1);
         ret = fread(&result->dib.width, 4, 1, fp);
@@ -667,18 +656,15 @@ TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
         ret = fread(&result->dib.nimpcolors, 4, 1, fp);
         assert(ret == 1);
 
-        // Log BMP header details
         ESP_LOGI(__FUNCTION__, "BMP Header Details:");
         ESP_LOGI(__FUNCTION__, "Width: %u, Height: %u", (unsigned int)result->dib.width, (unsigned int)result->dib.height);
         ESP_LOGI(__FUNCTION__, "Depth: %u bits, Compression Type: %u", (unsigned int)result->dib.depth, (unsigned int)result->dib.compress_type);
         ESP_LOGI(__FUNCTION__, "BMP Bytes Size: %u", (unsigned int)result->dib.bmp_bytesz);
 
-        // Release the mutex after reading headers
         xSemaphoreGive(sdcard_mutex);
 
         if ((result->dib.depth == 24) && (result->dib.compress_type == 0)) {
             ESP_LOGD(__FUNCTION__, "Processing 24-bit BMP");
-            // BMP rows are padded (if needed) to 4-byte boundary
             uint32_t rowSize = (result->dib.width * 3 + 3) & ~3;
             int w = result->dib.width;
             int h = result->dib.height;
@@ -715,41 +701,35 @@ TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
             ESP_LOGD(__FUNCTION__, "_y=%d _rows=%d _rowe=%d", _y, _rows, _rowe);
 
             #define BUFFPIXEL 20
-            uint8_t sdbuffer[3 * BUFFPIXEL]; // Pixel buffer (R+G+B per pixel)
+            uint8_t sdbuffer[3 * BUFFPIXEL];
             uint16_t *colors = (uint16_t*)malloc(sizeof(uint16_t) * w);
 
-            for (int row = 0; row < h; row++) { // For each scanline...
+            for (int row = 0; row < h; row++) {
                 if (row < _rows || row > _rowe) continue;
-                // Seek to start of scan line
-                // Try to acquire the mutex with zero wait time
                 if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
                 {
                     int pos = result->header.offset + (h - 1 - row) * rowSize;
                     fseek(fp, pos, SEEK_SET);
-                    int buffidx = sizeof(sdbuffer); // Force buffer reload
+                    int buffidx = sizeof(sdbuffer);
 
                     int index = 0;
-                    for (int col = 0; col < w; col++) { // For each pixel...
-                        if (buffidx >= sizeof(sdbuffer)) { // Buffer reload
+                    for (int col = 0; col < w; col++) {
+                        if (buffidx >= sizeof(sdbuffer)) {
                             fread(sdbuffer, sizeof(sdbuffer), 1, fp);
-                            buffidx = 0; // Reset index to beginning
+                            buffidx = 0;
                         }
                         if (col < _cols || col > _cole) continue;
-                        // Convert pixel from BMP to TFT format
                         uint8_t b = sdbuffer[buffidx++];
                         uint8_t g = sdbuffer[buffidx++];
                         uint8_t r = sdbuffer[buffidx++];
-                        colors[index++] = rgb565_conv_with_color_tweaks(r, g, b); // Updated function call
-                    } // end for col
+                        colors[index++] = rgb565_conv_with_color_tweaks(r, g, b);
+                    }
 
-                    // Release the mutex after reading the row
                     xSemaphoreGive(sdcard_mutex);
 
                     ESP_LOGD(__FUNCTION__, "lcdDrawMultiPixels _x=%d _y=%d row=%d", _x, _y, row);
                     lcdDrawMultiPixels(dev, _x, _y, _w, colors);
                     _y++;
-
-                    // Allow RTOS to switch tasks to prevent watchdog timeout
                     vTaskDelay(1);
                 }
                 else
@@ -757,10 +737,10 @@ TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
                     ESP_LOGW(__FUNCTION__, "SD card busy, skipping remaining rows");
                     break;
                 }
-            } // end for row
+            }
 
             free(colors);
-        } // end if depth==24 and compress_type==0
+        }
 
         free(result);
         fclose(fp);
@@ -782,13 +762,11 @@ TickType_t JPEGTest(TFT_t * dev, char * file, int width, int height) {
     startTick = xTaskGetTickCount();
 
     lcdSetFontDirection(dev, 0);
-    // lcdFillScreen(dev, BLACK);
 
     pixel_jpeg **pixels;
     int imageWidth;
     int imageHeight;
 
-    // Try to acquire the mutex with zero wait time
     if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
     {
         esp_err_t err = decode_jpeg(&pixels, file, width, height, &imageWidth, &imageHeight);
@@ -849,10 +827,8 @@ TickType_t PNGTest(TFT_t * dev, char * file, int width, int height) {
     lcdSetFontDirection(dev, 0);
     lcdFillScreen(dev, BLACK);
 
-    // Try to acquire the mutex with zero wait time
     if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
     {
-        // Open PNG file
         FILE* fp = fopen(file, "rb");
         if (fp == NULL) {
             ESP_LOGW(__FUNCTION__, "File not found [%s]", file);
@@ -881,11 +857,10 @@ TickType_t PNGTest(TFT_t * dev, char * file, int width, int height) {
 
             len = fread(buf + remain, 1, sizeof(buf) - remain, fp);
             if (len <= 0) {
-                // printf("EOF\n");
                 break;
             }
 
-            xSemaphoreGive(sdcard_mutex); // Release the mutex during processing
+            xSemaphoreGive(sdcard_mutex);
 
             int fed = pngle_feed(pngle, buf, remain + len);
             if (fed < 0) {
@@ -896,7 +871,6 @@ TickType_t PNGTest(TFT_t * dev, char * file, int width, int height) {
             remain = remain + len - fed;
             if (remain > 0) memmove(buf, buf + fed, remain);
 
-            // Try to re-acquire the mutex before next read
             if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE)
             {
                 ESP_LOGW(__FUNCTION__, "Failed to re-acquire SD card mutex");
@@ -907,7 +881,7 @@ TickType_t PNGTest(TFT_t * dev, char * file, int width, int height) {
         }
 
         fclose(fp);
-        xSemaphoreGive(sdcard_mutex); // Release the mutex after file operations
+        xSemaphoreGive(sdcard_mutex);
 
         uint16_t _width = width;
         uint16_t _cols = 0;
@@ -953,16 +927,13 @@ TickType_t CodeTest(TFT_t * dev, FontxFile *fx, int width, int height) {
 	TickType_t startTick, endTick, diffTick;
 	startTick = xTaskGetTickCount();
 
-	// get font width & height
 	uint8_t buffer[FontxGlyphBufSize];
 	uint8_t fontWidth;
 	uint8_t fontHeight;
 	GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-	//ESP_LOGI(__FUNCTION__,"fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
+
 	uint8_t xmoji = width / fontWidth;
 	uint8_t ymoji = height / fontHeight;
-	//ESP_LOGI(__FUNCTION__,"xmoji=%d ymoji=%d",xmoji, ymoji);
-
 
 	uint16_t color;
 	lcdFillScreen(dev, BLACK);
@@ -1045,71 +1016,33 @@ TickType_t RGB565ANITest(TFT_t * dev, char * file, int width, int height) {
     return ESP_OK;
 }
 
-/**
- * Main task for handling display operations and rendering images/GIFs.
- *
- * \param[in] pvParameters  Pointer to task parameters.
- */
 void st7796s_task(void *pvParameters) 
 {
-    // Set font files
     FontxFile fx16G[2];
     FontxFile fx24G[2];
     FontxFile fx32G[2];
     FontxFile fx32L[2];
-    InitFontx(fx16G, "/spiffs/ILGH16XB.FNT", ""); // 8x16Dot Gothic
-    InitFontx(fx24G, "/spiffs/ILGH24XB.FNT", ""); // 12x24Dot Gothic
-    InitFontx(fx32G, "/spiffs/ILGH32XB.FNT", ""); // 16x32Dot Gothic
-    InitFontx(fx32L, "/spiffs/LATIN32B.FNT", ""); // 16x32Dot Latin
+    InitFontx(fx16G, "/spiffs/ILGH16XB.FNT", "");
+    InitFontx(fx24G, "/spiffs/ILGH24XB.FNT", "");
+    InitFontx(fx32G, "/spiffs/ILGH32XB.FNT", "");
+    InitFontx(fx32L, "/spiffs/LATIN32B.FNT", "");
 
     FontxFile fx16M[2];
     FontxFile fx24M[2];
     FontxFile fx32M[2];
-    InitFontx(fx16M, "/spiffs/ILMH16XB.FNT", ""); // 8x16Dot Mincho
-    InitFontx(fx24M, "/spiffs/ILMH24XB.FNT", ""); // 12x24Dot Mincho
-    InitFontx(fx32M, "/spiffs/ILMH32XB.FNT", ""); // 16x32Dot Mincho
+    InitFontx(fx16M, "/spiffs/ILMH16XB.FNT", "");
+    InitFontx(fx24M, "/spiffs/ILMH24XB.FNT", "");
+    InitFontx(fx32M, "/spiffs/ILMH32XB.FNT", "");
 
-    // Initialize the TFT display structure
     TFT_t dev;
-    spi_master_init(&dev, CONFIG_MOSI_GPIO, CONFIG_SCLK_GPIO, CONFIG_CS_GPIO,
-                    CONFIG_DC_GPIO, CONFIG_RESET_GPIO, CONFIG_BL_GPIO);
-    ESP_LOGI(TAG, "SPI Master initialized");
+    // Replace SPI initialization with parallel initialization
+    parallel_master_init(&dev, -1, -1, -1, CONFIG_DC_GPIO, CONFIG_RESET_GPIO, CONFIG_BL_GPIO, -1, -1);
+    ESP_LOGI(TAG, "Parallel Master initialized");
 
-    // Initialize the display with the orientation specified in menuconfig
     lcdInit(&dev, CONFIG_WIDTH, CONFIG_HEIGHT, CONFIG_OFFSETX, CONFIG_OFFSETY, CONFIG_ORIENTATION);
     ESP_LOGI(TAG, "LCD Initialized with orientation 0x%02X", CONFIG_ORIENTATION);
 
-    // After lcdInit():
-    lcdFillScreen(&dev, CYAN); // Just a test
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-
-
     while (1) {
-		// FillTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-		// ColorBarTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-		// ArrowTest(&dev, fx16G, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-		// LineTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-		// CircleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-		// RoundRectTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-		// RectAngleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-		// TriangleTest(&dev, CONFIG_WIDTH, CONFIG_HEIGHT);
-		// WAIT;
-
-        // Try to acquire the mutex with zero wait time to check if the SD card is available
         if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
         {
             DIR *dir = opendir("/sdcard/");
@@ -1129,26 +1062,16 @@ void st7796s_task(void *pvParameters)
 
                     char *ext = strrchr(filename, '.');
                     if (ext != NULL) {
-                        ext++; // Skip the dot
-
-                        // Convert extension to lowercase for case-insensitive comparison
+                        ext++;
                         for (char *p = ext; *p; ++p) *p = tolower(*p);
 
                         if (strcmp(ext, "gif") == 0 && PLAY_GIF) {
                             ESP_LOGI(TAG, "Playing GIF: %s", filepath);
-                            
-                            // Release the mutex before processing the GIF
                             xSemaphoreGive(sdcard_mutex);
-                            
-                            // Play the GIF
                             esp_err_t gif_err = GIFTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
                             if (gif_err != ESP_OK) {
                                 ESP_LOGE(TAG, "Failed to play GIF: %s", filepath);
                             }
-
-                            // WAIT_LONG;
-
-                            // Re-acquire the mutex to continue processing remaining files
                             if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
                                 ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
                                 break;
@@ -1157,16 +1080,9 @@ void st7796s_task(void *pvParameters)
 
                         } else if ((strcmp(ext, "jpeg") == 0 || strcmp(ext, "jpg") == 0) && PLAY_JPEG) {
                             ESP_LOGI(TAG, "Displaying JPEG: %s", filepath);
-                            
-                            // Release the mutex before processing the JPEG
                             xSemaphoreGive(sdcard_mutex);
-                            
-                            // Display the JPEG
                             JPEGTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-
                             WAIT_LONG;
-
-                            // Re-acquire the mutex
                             if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
                                 ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
                                 break;
@@ -1175,16 +1091,9 @@ void st7796s_task(void *pvParameters)
 
                         } else if (strcmp(ext, "bmp") == 0 && PLAY_BMP) {
                             ESP_LOGI(TAG, "Displaying BMP: %s", filepath);
-                            
-                            // Release the mutex before processing the BMP
                             xSemaphoreGive(sdcard_mutex);
-                            
-                            // Display the BMP
                             BMPTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-
                             WAIT_LONG;
-
-                            // Re-acquire the mutex
                             if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
                                 ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
                                 break;
@@ -1193,16 +1102,9 @@ void st7796s_task(void *pvParameters)
 
                         } else if (strcmp(ext, "png") == 0 && PLAY_PNG) {
                             ESP_LOGI(TAG, "Displaying PNG: %s", filepath);
-                            
-                            // Release the mutex before processing the PNG
                             xSemaphoreGive(sdcard_mutex);
-                            
-                            // Display the PNG
                             PNGTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-
                             WAIT_LONG;
-
-                            // Re-acquire the mutex
                             if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
                                 ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
                                 break;
@@ -1211,19 +1113,11 @@ void st7796s_task(void *pvParameters)
 
                         } else if (strcmp(ext, "rgb565ani") == 0 && PLAY_RGB565ANI) {
                             ESP_LOGI(TAG, "Playing RGB565ANI: %s", filepath);
-                            
-                            // Release the mutex before processing the RGB565ANI
                             xSemaphoreGive(sdcard_mutex);
-                            
-                            // Play the RGB565ANI animation
                             esp_err_t ani_err = play_rgb565ani(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
                             if (ani_err != ESP_OK) {
                                 ESP_LOGE(TAG, "Failed to play RGB565ANI: %s", filepath);
                             }
-
-                            // WAIT_LONG;
-
-                            // Re-acquire the mutex
                             if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
                                 ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
                                 break;
@@ -1234,7 +1128,6 @@ void st7796s_task(void *pvParameters)
                 }
             }
 
-            // Close directory and release mutex after processing all files
             closedir(dir);
             xSemaphoreGive(sdcard_mutex);
         }
@@ -1243,10 +1136,8 @@ void st7796s_task(void *pvParameters)
             ESP_LOGW(TAG, "SD card busy, skipping image display cycle");
         }
 
-        // vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
-    // never reach
     while (1) {
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
@@ -1293,10 +1184,8 @@ void init_sdcard(void) {
             return;
         }
 
-        // Print SD card info to verify successful initialization
         sdmmc_card_print_info(stdout, sdcard);
 
-        // Validate SD card attributes
         if (sdcard->csd.capacity == 0 || sdcard->csd.sector_size == 0) {
             ESP_LOGE(TAG, "SD card attributes are invalid (capacity: %u, sector size: %u)",
                      (unsigned int)sdcard->csd.capacity, (unsigned int)sdcard->csd.sector_size);
@@ -1312,32 +1201,29 @@ void init_sdcard(void) {
 }
 
 
-
 // USB Device Descriptors
 
-// Device descriptor
 tusb_desc_device_t const desc_device =
 {
     .bLength            = sizeof(tusb_desc_device_t),
     .bDescriptorType    = TUSB_DESC_DEVICE,
-    .bcdUSB             = 0x0200, // USB 2.0
-    .bDeviceClass       = 0x00,   // Use class code 0 (each interface specifies its own class)
-    .bDeviceSubClass    = 0x00,   // Subclass code 0
-    .bDeviceProtocol    = 0x00,   // Protocol code 0
+    .bcdUSB             = 0x0200,
+    .bDeviceClass       = 0x00,
+    .bDeviceSubClass    = 0x00,
+    .bDeviceProtocol    = 0x00,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-    .idVendor           = 0x303A, // Espressif VID
-    .idProduct          = 0x4001, // PID for MSC device
+    .idVendor           = 0x303A,
+    .idProduct          = 0x4001,
     .bcdDevice          = 0x0100,
 
-    .iManufacturer      = 0x01,   // Manufacturer string index
-    .iProduct           = 0x02,   // Product string index
-    .iSerialNumber      = 0x03,   // Serial string index
+    .iManufacturer      = 0x01,
+    .iProduct           = 0x02,
+    .iSerialNumber      = 0x03,
 
     .bNumConfigurations = 0x01
 };
 
-// Configuration descriptor
 enum
 {
   ITF_NUM_MSC = 0,
@@ -1351,28 +1237,19 @@ enum
 
 uint8_t const desc_configuration[] =
 {
-    // Config number, interface count, string index, total length, attribute, power in mA
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_SELF_POWERED, 100),
-
-    // Interface number, string index, EP Out & EP In address, EP size
     TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, 0, EPNUM_MSC_OUT, EPNUM_MSC_IN, 64),
 };
 
-// String Descriptors
-
-// Language ID string descriptor
 uint16_t const string_desc_langid[] = { (TUSB_DESC_STRING << 8 ) | 4, 0x0409 };
 
 char const *string_desc_arr[] =
 {
-    "Espressif",        // 1: Manufacturer
-    "ESP32S3 SDCard",   // 2: Product
-    "123456",           // 3: Serial Number
+    "Espressif",
+    "ESP32S3 SDCard",
+    "123456",
 };
 
-// MSC Callbacks
-
-// Invoked when received SCSI_CMD_INQUIRY
 void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16], uint8_t product_rev[4])
 {
     ESP_LOGI(TAG, "tud_msc_inquiry_cb called for LUN %u", lun);
@@ -1390,11 +1267,8 @@ void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16
     memcpy(product_rev, rev, strlen(rev) > 4 ? 4 : strlen(rev));
 }
 
-// Invoked when received Test Unit Ready command.
 bool tud_msc_test_unit_ready_cb(uint8_t lun)
 {
-    // ESP_LOGI(TAG, "tud_msc_test_unit_ready_cb called for LUN %u", lun);
-
     if (sdcard == NULL)
     {
         ESP_LOGW(TAG, "SD card not initialized in tud_msc_test_unit_ready_cb");
@@ -1404,44 +1278,40 @@ bool tud_msc_test_unit_ready_cb(uint8_t lun)
     return true;
 }
 
-// Invoked when received SCSI_CMD_READ_CAPACITY_10 and SCSI_CMD_READ_FORMAT_CAPACITY
 void tud_msc_capacity_cb(uint8_t lun, uint32_t *block_count, uint16_t *block_size)
 {
     ESP_LOGI(TAG, "tud_msc_capacity_cb called for LUN %u", lun);
 
     if (sdcard != NULL)
     {
-        *block_size = sdcard->csd.sector_size; // Block size is sector size
-        *block_count = sdcard->csd.capacity;    // Number of blocks on the SD card
+        *block_size = sdcard->csd.sector_size;
+        *block_count = sdcard->csd.capacity;
         ESP_LOGI(TAG, "SD card capacity: %u blocks, block size: %u", (unsigned int)*block_count, (unsigned int)*block_size);
     }
     else
     {
         ESP_LOGW(TAG, "SD card not initialized in tud_msc_capacity_cb");
-        *block_size = 512; // Default block size
-        *block_count = 0;  // No blocks available
+        *block_size = 512;
+        *block_count = 0;
     }
 }
 
-// Invoked when received an SCSI command not in built-in list
 int32_t tud_msc_scsi_cb(uint8_t lun, uint8_t const scsi_cmd[16], void* buffer, uint16_t bufsize)
 {
     ESP_LOGI(TAG, "tud_msc_scsi_cb called with command: 0x%02X", scsi_cmd[0]);
-    // Return zero to indicate unsupported command
     return -1;
 }
 
-// Invoked when received READ10 command
 int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize)
 {
-    static uint32_t accumulated_sectors = 0;  // Tracks accumulated sectors for logging
-    static uint32_t last_logged_lba = 0;      // Tracks the last LBA for the log message
+    static uint32_t accumulated_sectors = 0;
+    static uint32_t last_logged_lba = 0;
 
     if (sdcard == NULL)
     {
         ESP_LOGW(TAG, "SD card not initialized in tud_msc_read10_cb");
         tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, SCSI_ASC_MEDIUM_NOT_PRESENT, SCSI_ASCQ);
-        return -1; // SD card not initialized
+        return -1;
     }
 
     if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY))
@@ -1449,7 +1319,6 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void* buff
         uint32_t sector_size = sdcard->csd.sector_size;
         uint32_t n_sectors = (bufsize + sector_size - 1) / sector_size;
 
-        // Verify card attributes
         if (sdcard->csd.capacity == 0 || sector_size == 0) {
             ESP_LOGE(TAG, "SD card attributes are invalid");
             tud_msc_set_sense(lun, SCSI_SENSE_HARDWARE_ERROR, SCSI_ASC_UNRECOVERED_READ_ERROR, SCSI_ASCQ);
@@ -1462,30 +1331,25 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void* buff
 
         if (err != ESP_OK)
         {
-            // Log error with specific LBA that failed
             ESP_LOGE(TAG, "sdmmc_read_sectors failed at LBA %u (Error: 0x%x)", (unsigned int)lba, err);
             tud_msc_set_sense(lun, SCSI_SENSE_HARDWARE_ERROR, SCSI_ASC_UNRECOVERED_READ_ERROR, SCSI_ASCQ);
             return -1;
         }
 
-        // Accumulate the sectors read and log only when crossing 1000-sector threshold
         accumulated_sectors += n_sectors;
 
-        // Log if accumulated sectors >= 1000 or if this is the first operation
         if (accumulated_sectors >= 1000 || last_logged_lba == 0) {
             uint32_t end_lba = lba + accumulated_sectors - 1;
             ESP_LOGI(TAG, "Reading from LBA %u to LBA %u, total sectors: %u", 
                      (unsigned int)last_logged_lba, (unsigned int)end_lba, (unsigned int)accumulated_sectors);
 
-            // Reset counters after logging
             accumulated_sectors = 0;
-            last_logged_lba = end_lba + 1;  // Update for the next operation
+            last_logged_lba = end_lba + 1;
         } else {
-            // Update the last LBA without logging
             last_logged_lba = lba + n_sectors;
         }
 
-        return bufsize; // Return the number of bytes read
+        return bufsize;
     }
     else
     {
@@ -1495,14 +1359,12 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void* buff
     }
 }
 
-#define TAG "ST7796S_WRITE" // Update the TAG for clarity
+#define TAG "ST7796S_WRITE"
 
-// Invoked when received WRITE10 command
 int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize)
 {
-    // Static variables to accumulate sectors and track logging
-    static uint32_t accumulated_sectors = 0;  // Tracks accumulated sectors for logging
-    static uint32_t last_logged_lba = 0;      // Tracks the last LBA for the log message
+    static uint32_t accumulated_sectors = 0;
+    static uint32_t last_logged_lba = 0;
 
     ESP_LOGD(TAG, "tud_msc_write10_cb called: lun=%u, lba=%" PRIu32 ", offset=%" PRIu32 ", bufsize=%" PRIu32,
              lun, lba, offset, bufsize);
@@ -1511,7 +1373,7 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
     {
         ESP_LOGW(TAG, "SD card not initialized in tud_msc_write10_cb");
         tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, SCSI_ASC_MEDIUM_NOT_PRESENT, SCSI_ASCQ);
-        return -1; // SD card not initialized
+        return -1;
     }
 
     if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY))
@@ -1519,7 +1381,6 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
         uint32_t sector_size = sdcard->csd.sector_size;
         uint32_t n_sectors = (bufsize + sector_size - 1) / sector_size;
 
-        // Verify that card attributes are valid
         if (sdcard->csd.capacity == 0 || sector_size == 0)
         {
             ESP_LOGE(TAG, "SD card attributes are invalid");
@@ -1534,14 +1395,12 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
         while (sectors_written < n_sectors)
         {
             uint32_t sectors_to_write = n_sectors - sectors_written;
-
-            // Attempt to write multiple sectors if possible
-            if (sectors_to_write > 16) // Adjust batch size as needed
+            if (sectors_to_write > 16)
             {
                 sectors_to_write = 16;
             }
 
-            int retry_count = 3; // Retry failed writes up to 3 times
+            int retry_count = 3;
             esp_err_t err;
 
             do
@@ -1549,7 +1408,7 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
                 err = sdmmc_write_sectors(sdcard, write_ptr, lba + sectors_written, sectors_to_write);
                 if (err == ESP_OK)
                 {
-                    break; // Write succeeded
+                    break;
                 }
 
                 ESP_LOGW(TAG, "Write retry for LBA %" PRIu32 ", sectors: %" PRIu32 " (Error: 0x%x)",
@@ -1561,8 +1420,6 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
             {
                 ESP_LOGE(TAG, "Failed to write sectors starting at LBA %" PRIu32 " (Error: 0x%x)",
                          lba + sectors_written, err);
-
-                // Log the error code directly since sdmmc_get_status is incorrect
                 ESP_LOGE(TAG, "SD card write error: 0x%x", err);
 
                 tud_msc_set_sense(lun, SCSI_SENSE_HARDWARE_ERROR, SCSI_ASC_WRITE_FAULT, SCSI_ASCQ);
@@ -1574,30 +1431,26 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
             sectors_written += sectors_to_write;
         }
 
-        // Accumulate the sectors written and log only when crossing 1000-sector threshold
         accumulated_sectors += n_sectors;
 
-        // Log if accumulated sectors >= 1000 or if this is the first operation
         if (accumulated_sectors >= 1000 || last_logged_lba == 0)
         {
             uint32_t end_lba = lba + accumulated_sectors - 1;
             ESP_LOGI(TAG, "Writing from LBA %" PRIu32 " to LBA %" PRIu32 ", total sectors: %" PRIu32,
                      last_logged_lba, end_lba, accumulated_sectors);
 
-            // Reset counters after logging
             accumulated_sectors = 0;
-            last_logged_lba = end_lba + 1;  // Update for the next operation
+            last_logged_lba = end_lba + 1;
         }
         else
         {
-            // Update the last LBA without logging
             last_logged_lba = lba + n_sectors;
         }
 
         ESP_LOGI(TAG, "Write operation completed successfully: %" PRIu32 " sectors written", n_sectors);
         xSemaphoreGive(sdcard_mutex);
 
-        return bufsize; // Return the number of bytes written
+        return bufsize;
     }
     else
     {
@@ -1606,20 +1459,14 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
         return -1;
     }
 
-    // To satisfy the compiler, although all paths above should return. 
-    // This line should never be reached.
     return -1;
 }
 
-// Indicate if device is writable
 bool tud_msc_is_writable_cb(uint8_t lun)
 {
-    // ESP_LOGI(TAG, "tud_msc_is_writable_cb called for LUN %" PRIu32, (uint32_t)lun);
     return true;
 }
 
-
-// USB Task for TinyUSB stack
 void usb_task(void *param)
 {
     ESP_LOGI(TAG, "Starting USB task");
@@ -1628,41 +1475,63 @@ void usb_task(void *param)
     {
         if (enable_usb_connection) {
             ESP_LOGD(TAG, "USB task: Running tud_task()");
-            tud_task(); // TinyUSB device task
+            tud_task();
         } else {
             ESP_LOGD(TAG, "USB task: USB connection disabled, yielding");
-            // When USB is disabled, just yield the task
             vTaskDelay(pdMS_TO_TICKS(100));
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
+const char* get_wakeup_cause_str(esp_sleep_wakeup_cause_t cause) {
+    switch (cause) {
+        case ESP_SLEEP_WAKEUP_EXT0:
+            return "EXT0 (External signal using RTC_IO)";
+        case ESP_SLEEP_WAKEUP_EXT1:
+            return "EXT1 (External signals using RTC_CNTL)";
+        case ESP_SLEEP_WAKEUP_TIMER:
+            return "TIMER (RTC Timer)";
+        case ESP_SLEEP_WAKEUP_TOUCHPAD:
+            return "TOUCHPAD (Touchpad)";
+        case ESP_SLEEP_WAKEUP_ULP:
+            return "ULP (ULP coprocessor)";
+        case ESP_SLEEP_WAKEUP_GPIO:
+            return "GPIO (Light-sleep only)";
+        case ESP_SLEEP_WAKEUP_UART:
+            return "UART (Light-sleep only)";
+        case ESP_SLEEP_WAKEUP_WIFI:
+            return "WIFI (Light-sleep only)";
+        case ESP_SLEEP_WAKEUP_COCPU:
+            return "COCPU (Light-sleep only)";
+        case ESP_SLEEP_WAKEUP_COCPU_TRAP_TRIG:
+            return "COCPU_TRAP_TRIG (Light-sleep only)";
+        case ESP_SLEEP_WAKEUP_BT:
+            return "BT (Light-sleep only)";
+        case ESP_SLEEP_WAKEUP_ALL:
+            return "ALL (All wakeup sources disabled)";
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+        default:
+            return "UNDEFINED (No wakeup source)";
+    }
+}
 
-// ISR handler for the button
 static void IRAM_ATTR gpio_isr_handler(void* arg) {
     uint32_t gpio_num = (uint32_t) arg;
     BaseType_t higher_priority_task_woken = pdFALSE;
 
-    // Send the GPIO number to the button_queue from ISR
     if (xQueueSendFromISR(button_queue, &gpio_num, &higher_priority_task_woken) != pdTRUE) {
-        ESP_LOGW(BUTTON_TAG, "Button ISR: Failed to send to queue");
-    } else {
-        ESP_LOGD(BUTTON_TAG, "Button ISR: GPIO %" PRIu32 " event sent to queue", gpio_num);
     }
 
-    // Yield to higher priority task if necessary
     if (higher_priority_task_woken) {
         portYIELD_FROM_ISR();
     }
 }
 
-// The task handling the sleep/wake button (GPIO4)
-// The task handling the sleep/wake button (GPIO4)
 static void button_task(void* arg) {
     uint32_t io_num;
     TickType_t last_press = 0;
-    const TickType_t debounce_time = pdMS_TO_TICKS(200); // 200 ms debounce
+    const TickType_t debounce_time = pdMS_TO_TICKS(200);
 
     ESP_LOGI(BUTTON_TAG, "Button task started");
 
@@ -1675,31 +1544,38 @@ static void button_task(void* arg) {
             if ((current_time - last_press) > debounce_time) {
                 last_press = current_time;
 
-                // Positive edge: button just released (low->high).
-                vTaskDelay(pdMS_TO_TICKS(50)); // small delay to ensure stability
+                vTaskDelay(pdMS_TO_TICKS(50));
 
                 if (gpio_get_level(BUTTON_GPIO) == 1) {
                     ESP_LOGI(BUTTON_TAG, "Button release stable, preparing for deep sleep");
 
-                    // Keep RTC peripherals powered if needed
-                    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+                    struct timeval tv_now;
+                    gettimeofday(&tv_now, NULL);
+                    sleep_start_time = ((uint64_t)tv_now.tv_sec * 1000000L) + (uint64_t)tv_now.tv_usec;
 
-                    // Initialize the pin as RTC IO and enable internal pull-up for stability
-                    rtc_gpio_init(BUTTON_GPIO);
-                    rtc_gpio_pullup_en(BUTTON_GPIO);
+                    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
-                    // Enable EXT0 wakeup on level=0 (wake up when button is pressed)
-                    esp_err_t err = esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0);
+                    esp_err_t pd_ret = esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
+                    if (pd_ret != ESP_OK) {
+                        ESP_LOGE(BUTTON_TAG, "Failed to configure RTC_PERIPH power domain: %s", esp_err_to_name(pd_ret));
+                        continue;
+                    }
+
+                    uint64_t io_mask = (1ULL << BUTTON_GPIO);
+
+                    esp_sleep_ext1_wakeup_mode_t wakeup_mode = ESP_EXT1_WAKEUP_ANY_LOW;
+
+                    esp_err_t err = esp_sleep_enable_ext1_wakeup(io_mask, wakeup_mode);
                     if (err != ESP_OK) {
-                        ESP_LOGE(BUTTON_TAG, "Failed to enable ext0 wakeup: %s", esp_err_to_name(err));
+                        ESP_LOGE(BUTTON_TAG, "Failed to enable EXT1 wakeup: %s", esp_err_to_name(err));
+                        continue;
                     } else {
-                        ESP_LOGI(BUTTON_TAG, "ext0 wakeup enabled for GPIO %d, wake on LOW level", BUTTON_GPIO);
+                        ESP_LOGI(BUTTON_TAG, "EXT1 wakeup enabled for GPIO %d, wake on ANY_LOW level", BUTTON_GPIO);
                     }
 
                     ESP_LOGI(BUTTON_TAG, "Entering deep sleep now");
                     esp_deep_sleep_start();
 
-                    ESP_LOGE(BUTTON_TAG, "Deep sleep failed to initiate");
                 } else {
                     ESP_LOGW(BUTTON_TAG, "Button not high after release, not sleeping");
                 }
@@ -1710,7 +1586,6 @@ static void button_task(void* arg) {
         }
     }
 }
-
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starting app_main");
@@ -1725,8 +1600,7 @@ void app_main(void) {
     };
 
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
-    if (ret != ESP_OK)
-    {
+    if (ret != ESP_OK) {
         if (ret == ESP_FAIL) {
             ESP_LOGE(TAG, "Failed to mount or format filesystem");
         } else if (ret == ESP_ERR_NOT_FOUND) {
@@ -1739,19 +1613,14 @@ void app_main(void) {
 
     size_t total = 0, used = 0;
     ret = esp_spiffs_info(NULL, &total, &used);
-    if (ret != ESP_OK)
-    {
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
-    }
-    else
-    {
+    } else {
         ESP_LOGI(TAG, "Partition size: total: %u, used: %u", (unsigned int)total, (unsigned int)used);
     }
 
-    // List files in SPIFFS
     SPIFFS_Directory("/spiffs/");
 
-    // Create a mutex for SD card access
     sdcard_mutex = xSemaphoreCreateMutex();
     if (sdcard_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create SD card mutex");
@@ -1761,28 +1630,45 @@ void app_main(void) {
     init_sdcard();
 
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
-        ESP_LOGI(BUTTON_TAG, "Woke up from deep sleep by button press (ext0 wake on LOW)");
-        // After waking up, just reconfigure the pin normally
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
+        ESP_LOGI(BUTTON_TAG, "Woke up from deep sleep by button release (EXT1)");
+
+        struct timeval tv_now;
+        gettimeofday(&tv_now, NULL);
+        uint64_t current_time_us = ((uint64_t)tv_now.tv_sec * 1000000L) + (uint64_t)tv_now.tv_usec;
+        uint64_t sleep_duration_us = current_time_us - sleep_start_time;
+        double sleep_duration_sec = (double)sleep_duration_us / 1000000.0;
+
+        ESP_LOGI(BUTTON_TAG, "Sleep duration: %.2f seconds", sleep_duration_sec);
+
+        if (sleep_duration_sec >= 5.0) {
+            ESP_LOGI(BUTTON_TAG, "Valid sleep duration, handling wake-up event");
+        } else {
+            ESP_LOGW(BUTTON_TAG, "Sleep duration too short, ignoring wake-up event");
+            esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
+            esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+        }
+
         rtc_gpio_deinit(BUTTON_GPIO);
     } else {
-        ESP_LOGI(BUTTON_TAG, "Device booted normally");
+        ESP_LOGI(TAG, "Device booted normally");
     }
 
-    // Configure the button GPIO for positive edge interrupt (release)
-    // When button released: line goes from low to high.
-    // We'll sleep at release time, so that pressing the button (line=1->0) wakes the device.
-    gpio_config_t io_conf_sleep = {
+    gpio_config_t io_conf_sleep_initial = {
         .pin_bit_mask = (1ULL << BUTTON_GPIO),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = (BUTTON_ACTIVE_LEVEL == 0) ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
         .pull_down_en = (BUTTON_ACTIVE_LEVEL == 1) ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
-        // Use POSEDGE to detect when the button is released (line goes from low to high)
         .intr_type = GPIO_INTR_POSEDGE
     };
-    gpio_config(&io_conf_sleep);
-    ESP_LOGI(TAG, "Configured button GPIO %d as input with %s pull",
+    gpio_config(&io_conf_sleep_initial);
+    ESP_LOGI(TAG, "Configured button GPIO %d as RTC GPIO with %s pull",
              BUTTON_GPIO, (BUTTON_ACTIVE_LEVEL == 0) ? "pull-up" : "pull-down");
+
+    if (!rtc_gpio_is_valid_gpio(BUTTON_GPIO)) {
+        ESP_LOGE(BUTTON_TAG, "GPIO %d does not support RTC IO", BUTTON_GPIO);
+        return;
+    }
 
     button_queue = xQueueCreate(10, sizeof(uint32_t));
     if (button_queue == NULL) {
@@ -1790,18 +1676,18 @@ void app_main(void) {
         return;
     }
 
-    // Install GPIO ISR service
     esp_err_t gpio_isr_ret = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
     if (gpio_isr_ret != ESP_OK) {
-        ESP_LOGE(BUTTON_TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_ret));
+        ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(gpio_isr_ret));
         return;
     }
 
-    // Add ISR handler for the button
-    gpio_isr_handler_add(BUTTON_GPIO, gpio_isr_handler, (void*) BUTTON_GPIO);
+    esp_err_t gpio_add_isr_ret = gpio_isr_handler_add(BUTTON_GPIO, gpio_isr_handler, (void*)BUTTON_GPIO);
+    if (gpio_add_isr_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add ISR handler: %s", esp_err_to_name(gpio_add_isr_ret));
+        return;
+    }
     ESP_LOGI(BUTTON_TAG, "GPIO ISR handler added for GPIO %d", BUTTON_GPIO);
-
-    // We do NOT enable wakeup here. We'll enable ext0 wakeup right before sleeping.
 
     BaseType_t button_task_ret = xTaskCreate(button_task, "button_task", 4096, NULL, 5, NULL);
     if (button_task_ret != pdPASS) {
@@ -1810,57 +1696,18 @@ void app_main(void) {
     }
     ESP_LOGI(TAG, "button_task created successfully");
 
-    // If USB connection is enabled
     extern bool enable_usb_connection;
     if (enable_usb_connection) {
         ESP_LOGI(TAG, "Initializing TinyUSB stack");
         tinyusb_config_t tusb_cfg = {};
         ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
 
-        // Create the USB task with highest priority
         xTaskCreate(usb_task, "usb_task", 4096, NULL, configMAX_PRIORITIES - 1, NULL);
 
-        // Delay the display task to allow USB enumeration
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
 
-    rtc_gpio_deinit(GPIO_NUM_0);
-    gpio_reset_pin(GPIO_NUM_0);
-    gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT);
-    gpio_pullup_dis(GPIO_NUM_0);
-    gpio_pulldown_dis(GPIO_NUM_0);
-
-    #define LEDC_TIMER              LEDC_TIMER_0
-    #define LEDC_MODE               LEDC_LOW_SPEED_MODE
-    #define LEDC_OUTPUT_IO          (38)
-    #define LEDC_CHANNEL            LEDC_CHANNEL_0
-    #define LEDC_DUTY_RES           LEDC_TIMER_8_BIT
-    #define LEDC_DUTY               (0)
-    #define LEDC_FREQUENCY          (5000)
-
-    ledc_timer_config_t ledc_timer = {
-        .speed_mode       = LEDC_MODE,
-        .timer_num        = LEDC_TIMER,
-        .duty_resolution  = LEDC_DUTY_RES,
-        .freq_hz          = LEDC_FREQUENCY,
-        .clk_cfg          = LEDC_AUTO_CLK
-    };
-    ledc_timer_config(&ledc_timer);
-
-    ledc_channel_config_t ledc_channel = {
-        .speed_mode     = LEDC_MODE,
-        .channel        = LEDC_CHANNEL,
-        .timer_sel      = LEDC_TIMER,
-        .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = LEDC_OUTPUT_IO,
-        .duty           = LEDC_DUTY,
-        .hpoint         = 0
-    };
-    ledc_channel_config(&ledc_channel);
-
-    gpio_reset_pin(LED_PIN);
-    gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(LED_PIN, 0);
+    configure_gpio_and_led();
 
     xTaskCreate(st7796s_task, "ST7796S", 1024 * 6, NULL, 2, NULL);
 }
