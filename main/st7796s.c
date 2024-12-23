@@ -29,6 +29,8 @@
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>  // Add this include for strtof
+#include <stdbool.h> // Added this include to ensure bool is defined
+#include "esp_timer.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -41,9 +43,6 @@
 
 #define TAG "ST7796S"
 #define _DEBUG_ 0
-
-// Removed SPI host definitions since we are now using a parallel interface.
-// No more SPI frequency definitions or SPI DMA channel configurations.
 
 // Initialize ColorTweaks with values from menuconfig
 ColorTweaks color_tweaks = {
@@ -123,6 +122,61 @@ void init_brightness_contrast_values(void) {
 
 // Helper function: set data pins (D0-D7) from a byte
 static void parallel_set_data_pins(uint8_t val) {
+    // -------------------------------------------
+    // BEGIN MODIFICATIONS FOR CONDITIONAL LOGGING
+    // -------------------------------------------
+
+    // Static variables to remember the last logged value, how many times it repeated,
+    // a time window to limit logs per second, and how many logs we've done in the current window.
+    static uint8_t last_logged_val = 0xFF;
+    static uint32_t repeated_count = 0;
+
+    // We'll track the last time we reset our "one-second" window (in milliseconds).
+    static uint64_t window_start_ms = 0;
+    static uint32_t log_count_in_window = 0;
+
+    // Current time in microseconds
+    uint64_t now_us = esp_timer_get_time();
+    // Convert to milliseconds
+    uint64_t now_ms = now_us / 1000ULL;
+
+    // If more than 1000 ms have passed since we started the window, reset.
+    if ((now_ms - window_start_ms) > 1000ULL) {
+        window_start_ms = now_ms;
+        log_count_in_window = 0;
+    }
+
+    // Decide if we are allowed to log this message.
+    bool can_log = true;
+
+    // Check if this value is the same as last time we logged.
+    if (val == last_logged_val) {
+        repeated_count++;
+        // If we already logged the same value 3 times, skip logging.
+        if (repeated_count > 3) {
+            can_log = false;
+        }
+    } else {
+        // It's a different value: reset repeated count and update last_logged_val
+        last_logged_val = val;
+        repeated_count = 1;
+    }
+
+    // Also check the per-second rate limit of 3 logs per second.
+    if (log_count_in_window >= 3) {
+        can_log = false;
+    }
+
+    // If logging is allowed, do it and increment log_count_in_window.
+    if (can_log) {
+        ESP_LOGD(TAG, "Setting data pins to val=0x%02X", val);
+        log_count_in_window++;
+    }
+
+    // -----------------------------------------
+    // END MODIFICATIONS FOR CONDITIONAL LOGGING
+    // -----------------------------------------
+
     // Write each bit of val to the respective D0-D7 GPIO lines.
     // Using the configured pins from Kconfig.
     gpio_set_level(CONFIG_D0_GPIO, (val >> 0) & 0x01);
@@ -135,8 +189,10 @@ static void parallel_set_data_pins(uint8_t val) {
     gpio_set_level(CONFIG_D7_GPIO, (val >> 7) & 0x01);
 }
 
+
 // Helper function: pulse the WR line to latch data
 static void parallel_pulse_wr(int16_t wr_gpio) {
+    // ESP_LOGD(TAG, "Pulsing WR");
     gpio_set_level(wr_gpio, 0);
     // A short delay may be considered if needed. For now, assume the timing is sufficient.
     gpio_set_level(wr_gpio, 1);
@@ -144,20 +200,29 @@ static void parallel_pulse_wr(int16_t wr_gpio) {
 
 // Parallel master init function replaces spi_master_init()
 // It initializes the parallel interface GPIO lines for data and control.
-void parallel_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t GPIO_CS,
+void parallel_master_init(TFT_t *dev,
+                          int16_t GPIO_MOSI, int16_t GPIO_SCLK, int16_t GPIO_CS,
                           int16_t GPIO_DC, int16_t GPIO_RESET, int16_t GPIO_BL,
-                          int16_t GPIO_WR, int16_t GPIO_RD) {
-
-    // Although original code referred to SPI pins (MOSI, SCLK, CS),
-    // we no longer use them. We keep them as parameters to avoid altering the function signature too drastically,
-    // but we focus on parallel pins DC, WR, RD, RESET, BL, and data lines D0-D7.
-
-    // Initialize DC pin
+                          int16_t GPIO_WR, int16_t GPIO_RD)
+{
     ESP_LOGI(TAG, "Initializing GPIO_DC=%d", GPIO_DC);
     gpio_reset_pin(GPIO_DC);
     gpio_set_direction(GPIO_DC, GPIO_MODE_OUTPUT);
     gpio_set_level(GPIO_DC, 0);
     ESP_LOGI(TAG, "GPIO_DC=%d set to LOW", GPIO_DC);
+
+    // --- BEGIN CHANGE: remove references to dev->_cs, just drive CS if given ---
+    if (GPIO_CS >= 0) {
+        ESP_LOGI(TAG, "Initializing GPIO_CS=%d", GPIO_CS);
+        gpio_reset_pin(GPIO_CS);
+        gpio_set_direction(GPIO_CS, GPIO_MODE_OUTPUT);
+        // Drive CS low to activate the LCD
+        gpio_set_level(GPIO_CS, 0);
+        ESP_LOGI(TAG, "GPIO_CS=%d set to LOW (active)", GPIO_CS);
+    } else {
+        ESP_LOGW(TAG, "GPIO_CS not defined (value: %d)", GPIO_CS);
+    }
+    // --- END CHANGE ---
 
     // Initialize WR pin (write strobe)
     ESP_LOGI(TAG, "Initializing GPIO_WR=%d", GPIO_WR);
@@ -167,7 +232,6 @@ void parallel_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int1
     ESP_LOGI(TAG, "GPIO_WR=%d set to HIGH", GPIO_WR);
 
     // Initialize RD pin (read strobe) - if we do not use reading, we can set it high
-    // but we keep the original logic and comments, just adapted for parallel.
     ESP_LOGI(TAG, "Initializing GPIO_RD=%d", GPIO_RD);
     if (GPIO_RD >= 0) {
         gpio_reset_pin(GPIO_RD);
@@ -223,20 +287,19 @@ void parallel_master_init(TFT_t *dev, int16_t GPIO_MOSI, int16_t GPIO_SCLK, int1
     dev->_dc = GPIO_DC;
     dev->_bl = GPIO_BL;
     dev->_reset = GPIO_RESET;
-
-    // Store WR and RD pins in device structure as well (added for parallel)
     dev->_wr = GPIO_WR;
     dev->_rd = GPIO_RD;
 
-    // No SPI device to add now; we are directly writing parallel data.
     ESP_LOGI(TAG, "Parallel bus initialized successfully");
 }
+
 
 bool parallel_master_write_byte(TFT_t *dev, const uint8_t *Data, size_t DataLength) {
     // For the parallel bus, we write each byte and pulse WR for each.
     // This replaces the SPI transaction logic.
     if (DataLength > 0) {
         for (size_t i = 0; i < DataLength; i++) {
+            // ESP_LOGD(TAG, "Writing byte 0x%02X", Data[i]);
             parallel_set_data_pins(Data[i]);
             parallel_pulse_wr(dev->_wr);
         }
@@ -247,20 +310,21 @@ bool parallel_master_write_byte(TFT_t *dev, const uint8_t *Data, size_t DataLeng
 }
 
 bool parallel_master_write_command(TFT_t *dev, uint8_t cmd) {
-    // DC=0 for command
+    // ESP_LOGD(TAG, "Writing command 0x%02X", cmd);
     gpio_set_level(dev->_dc, 0);
     uint8_t Byte = cmd;
     return parallel_master_write_byte(dev, &Byte, 1);
 }
 
 bool parallel_master_write_data_byte(TFT_t *dev, uint8_t data) {
-    // DC=1 for data
+    // ESP_LOGD(TAG, "Writing data byte 0x%02X", data);
     gpio_set_level(dev->_dc, 1);
     uint8_t Byte = data;
     return parallel_master_write_byte(dev, &Byte, 1);
 }
 
 bool parallel_master_write_data_word(TFT_t *dev, uint16_t data) {
+    // ESP_LOGD(TAG, "Writing data word 0x%04X", data);
     uint8_t Byte[2];
     Byte[0] = (data >> 8) & 0xFF;
     Byte[1] = data & 0xFF;
@@ -269,6 +333,7 @@ bool parallel_master_write_data_word(TFT_t *dev, uint16_t data) {
 }
 
 bool parallel_master_write_addr(TFT_t *dev, uint16_t addr1, uint16_t addr2) {
+    // ESP_LOGD(TAG, "Writing address from 0x%04X to 0x%04X", addr1, addr2);
     uint8_t Byte[4];
     Byte[0] = (addr1 >> 8) & 0xFF;
     Byte[1] = addr1 & 0xFF;
@@ -279,6 +344,7 @@ bool parallel_master_write_addr(TFT_t *dev, uint16_t addr1, uint16_t addr2) {
 }
 
 bool parallel_master_write_color(TFT_t *dev, uint16_t color, uint32_t size) {
+    // ESP_LOGD(TAG, "Writing color 0x%04X repeated %" PRIu32 " times", color, size);
     gpio_set_level(dev->_dc, 1);
     uint8_t high = (color >> 8) & 0xFF;
     uint8_t low = color & 0xFF;
@@ -292,6 +358,7 @@ bool parallel_master_write_color(TFT_t *dev, uint16_t color, uint32_t size) {
 }
 
 bool parallel_master_write_colors(TFT_t *dev, uint16_t *colors, uint16_t size) {
+    // ESP_LOGD(TAG, "Writing %" PRIu16 " colors", size);
     gpio_set_level(dev->_dc, 1);
     for (uint16_t i = 0; i < size; i++) {
         uint8_t high = (colors[i] >> 8) & 0xFF;
@@ -558,6 +625,9 @@ void lcdDrawBitmap(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, u
     uint16_t x2 = x1 + w - 1;
     uint16_t y2 = y1 + h - 1;
 
+    // No changes to existing comments or logic
+    ESP_LOGD(TAG, "lcdDrawBitmap x=%u y=%u w=%u h=%u", x, y, w, h);
+
     parallel_master_write_command(dev, 0x2A);
     parallel_master_write_addr(dev, x1, x2);
 
@@ -566,18 +636,21 @@ void lcdDrawBitmap(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, u
 
     parallel_master_write_command(dev, 0x2C);
 
-    // DC=1 for data
     gpio_set_level(dev->_dc, 1);
     for (uint32_t i = 0; i < (w * h); i++) {
         uint16_t color = data[i];
         uint8_t high = (color >> 8) & 0xFF;
         uint8_t low = color & 0xFF;
+        // Changed %u to %" PRIu32 " to correctly format uint32_t 'i'
+        ESP_LOGD(TAG, "Pixel[%" PRIu32 "]=0x%04X (H=0x%02X, L=0x%02X)", i, color, high, low);
+
         parallel_set_data_pins(high);
         parallel_pulse_wr(dev->_wr);
         parallel_set_data_pins(low);
         parallel_pulse_wr(dev->_wr);
     }
 }
+
 
 // Draw a small rectangle bitmap (optimized for small regions)
 // x: X coordinate (start)
@@ -608,6 +681,9 @@ void lcdDrawBitmapRect(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t 
         uint16_t color = data[i];
         uint8_t high = (color >> 8) & 0xFF;
         uint8_t low = color & 0xFF;
+        // Changed %u to %" PRIu32 " to correctly format uint32_t 'i'
+        ESP_LOGD(TAG, "Rect Pixel[%" PRIu32 "]=0x%04X (H=0x%02X, L=0x%02X)", i, color, high, low);
+
         parallel_set_data_pins(high);
         parallel_pulse_wr(dev->_wr);
         parallel_set_data_pins(low);
@@ -615,14 +691,17 @@ void lcdDrawBitmapRect(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t 
     }
 }
 
+
 // Display OFF
 void lcdDisplayOff(TFT_t *dev) {
-    parallel_master_write_command(dev, 0x28);  // DISPOFF
+    ESP_LOGI(TAG, "Display OFF");
+    parallel_master_write_command(dev, 0x28);
 }
 
 // Display ON
 void lcdDisplayOn(TFT_t *dev) {
-    parallel_master_write_command(dev, 0x29);  // DISPON
+    ESP_LOGI(TAG, "Display ON");
+    parallel_master_write_command(dev, 0x29);
 }
 
 // Fill screen

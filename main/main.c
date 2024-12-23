@@ -35,9 +35,7 @@
 #include "esp_spiffs.h"
 #include "esp_random.h"         // Include for esp_random()
 #include "esp_timer.h"          // Required for esp_timer_get_time()
-#include "esp_sleep.h" // Include sleep-related functions and types
-// #include "esp_private/esp_clk.h"
-
+#include "esp_sleep.h"          // Include sleep-related functions and types
 
 #include "driver/ledc.h"        // Include GPIO driver definitions
 #include "driver/rtc_io.h"      // Include RTC GPIO driver definitions
@@ -45,19 +43,30 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "driver/sdmmc_host.h"
+#include "driver/spi_master.h"  // For SD card SPI
 
 #include <miniz.h>  // Use the updated standalone miniz.h
 
-#include "st7796s.h"
-#include "fontx.h"
+#include "fontx.h" // We keep references to fontx only if absolutely needed
 #include "bmpfile.h"
 #include "decode_jpeg.h"
 #include "decode_png.h"
 #include "pngle.h"
 #include "decode_gif.h"
-#include "decode_rgb565ani.h"
-#include "gpio_led.h" // Include the GPIO and LED configuration header
 
+// Replaced old st7796s driver with esp_lcd-based references
+
+// ADD this new include to ensure esp_lcd_new_panel_st7796() is declared:
+#include "esp_lcd_st7796.h"    // Provides esp_lcd_new_panel_st7796() declaration
+
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_vendor.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_interface.h"
+#include "esp_lcd_types.h"
+
+#include "decode_rgb565ani.h"  // Our updated decode code
+#include "gpio_led.h"          // Include the GPIO and LED configuration header
 
 #include "sdkconfig.h" // Ensure sdkconfig.h is included to access CONFIG_* variables
 
@@ -65,7 +74,6 @@
 
 #include "class/msc/msc.h"           // Include MSC class definitions
 #include "class/msc/msc_device.h"    // Include MSC device definitions
-
 
 #ifndef SCSI_SENSE_NOT_READY
 #define SCSI_SENSE_NOT_READY 0x02
@@ -106,42 +114,37 @@
 #define CONFIG_SD_MISO_GPIO   13
 #define CONFIG_SD_SCLK_GPIO   12
 
-#define INTERVAL 400  // Interval between tests in milliseconds
-#define INTERVAL_LONG 2000  // Interval between tests in milliseconds
-
-#define WAIT vTaskDelay(INTERVAL)  // Macro to simplify delay calls
-#define WAIT_LONG vTaskDelay(INTERVAL_LONG)  // Macro to simplify delay calls
-
-static const char *TAG = "ST7796S";  // Logging tag for this module
-sdmmc_card_t* sdcard = NULL; // Global variable to access the SD card information
-
-// Define orientation constants for the display
-#define ORIENTATION_LANDSCAPE           0x48 // Landscape orientation
-#define ORIENTATION_PORTRAIT            0x28 // Portrait orientation
-#define ORIENTATION_INVERTED_LANDSCAPE  0x88 // Inverted landscape orientation
-#define ORIENTATION_INVERTED_PORTRAIT   0xE8 // Inverted portrait orientation
-
-// Map the selected orientation from menuconfig to the orientation constant
-#if CONFIG_ORIENTATION_LANDSCAPE
-    #define CONFIG_ORIENTATION ORIENTATION_LANDSCAPE
-#elif CONFIG_ORIENTATION_PORTRAIT
-    #define CONFIG_ORIENTATION ORIENTATION_PORTRAIT
-#elif CONFIG_ORIENTATION_INVERTED_LANDSCAPE
-    #define CONFIG_ORIENTATION ORIENTATION_INVERTED_LANDSCAPE
-#elif CONFIG_ORIENTATION_INVERTED_PORTRAIT
-    #define CONFIG_ORIENTATION ORIENTATION_INVERTED_PORTRAIT
-#else
-    #define CONFIG_ORIENTATION ORIENTATION_LANDSCAPE // Default orientation
-#endif
+static const char *TAG = "I80_ST7796";  // Logging tag for this module
+sdmmc_card_t* sdcard = NULL;           // Global variable to access the SD card
 
 static bool enable_usb_connection = false;  // Global flag to control USB connectivity
 
-// Define boolean flags for each media file type
-#define PLAY_JPEG       true
-#define PLAY_GIF        false
+// Use the Kconfig-defined resolution
+#define LCD_WIDTH        CONFIG_WIDTH    // e.g. 480
+#define LCD_HEIGHT       CONFIG_HEIGHT   // e.g. 320
+
+// Pixel clock from Kconfig
+#define LCD_PIXEL_CLK_HZ CONFIG_PIXEL_CLK_HZ
+
+// Parallel bus pins, from Kconfig
+#define LCD_DC_PIN   CONFIG_DC_GPIO
+#define LCD_WR_PIN   CONFIG_WR_GPIO
+#define LCD_CS_PIN   CONFIG_CD_GPIO
+#define LCD_RST_PIN  CONFIG_RST_GPIO
+#define LCD_DATA0_PIN CONFIG_D0_GPIO
+#define LCD_DATA1_PIN CONFIG_D1_GPIO
+#define LCD_DATA2_PIN CONFIG_D2_GPIO
+#define LCD_DATA3_PIN CONFIG_D3_GPIO
+#define LCD_DATA4_PIN CONFIG_D4_GPIO
+#define LCD_DATA5_PIN CONFIG_D5_GPIO
+#define LCD_DATA6_PIN CONFIG_D6_GPIO
+#define LCD_DATA7_PIN CONFIG_D7_GPIO
+
+// If you want backlight pin control, use:
+#define LCD_BL_PIN   CONFIG_BL_GPIO
+
+// Freed from older tests
 #define PLAY_RGB565ANI  true
-#define PLAY_BMP        false
-#define PLAY_PNG        false
 
 static QueueHandle_t button_queue = NULL;
 
@@ -155,901 +158,137 @@ RTC_DATA_ATTR uint64_t sleep_start_time = 0;
 
 SemaphoreHandle_t sdcard_mutex; // Mutex for SD card access
 
-
-// Function to list files in SPIFFS directory
-static void SPIFFS_Directory(char * path) {
-    DIR* dir = opendir(path);
-    assert(dir != NULL);
-    while (true) {
-        struct dirent* pe = readdir(dir);
-        if (!pe) break;
-        ESP_LOGI(__FUNCTION__, "d_name=%s d_ino=%d d_type=%x", pe->d_name, pe->d_ino, pe->d_type);
-    }
-    closedir(dir);
-}
-
-
-TickType_t FillTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    lcdFillScreen(dev, RED);
-    vTaskDelay(50);
-    lcdFillScreen(dev, GREEN);
-    vTaskDelay(50);
-    lcdFillScreen(dev, BLUE);
-    vTaskDelay(50);
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t ColorBarTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    if (width < height) {
-        uint16_t y1, y2;
-        y1 = height / 3;
-        y2 = (height / 3) * 2;
-        lcdDrawFillRect(dev, 0, 0, width - 1, y1 - 1, RED);
-        vTaskDelay(1);
-        lcdDrawFillRect(dev, 0, y1, width - 1, y2 - 1, GREEN);
-        vTaskDelay(1);
-        lcdDrawFillRect(dev, 0, y2, width - 1, height - 1, BLUE);
-    } else {
-        uint16_t x1, x2;
-        x1 = width / 3;
-        x2 = (width / 3) * 2;
-        lcdDrawFillRect(dev, 0, 0, x1 - 1, height - 1, RED);
-        vTaskDelay(1);
-        lcdDrawFillRect(dev, x1, 0, x2 - 1, height - 1, GREEN);
-        vTaskDelay(1);
-        lcdDrawFillRect(dev, x2, 0, width - 1, height - 1, BLUE);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t ArrowTest(TFT_t * dev, FontxFile *fx, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-	// get font width & height
-    uint8_t buffer[FontxGlyphBufSize];
-    uint8_t fontWidth;
-    uint8_t fontHeight;
-    GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-
-    uint16_t xpos;
-    uint16_t ypos;
-    int stlen;
-    uint8_t ascii[24];
-    uint16_t color;
-
-    lcdFillScreen(dev, BLACK);
-
-    strcpy((char *)ascii, "ST7796S");
-    if (width < height) {
-        xpos = ((width - fontHeight) / 2) - 1;
-        ypos = (height - (strlen((char *)ascii) * fontWidth)) / 2;
-        lcdSetFontDirection(dev, DIRECTION90);
-    } else {
-        ypos = ((height - fontHeight) / 2) - 1;
-        xpos = (width - (strlen((char *)ascii) * fontWidth)) / 2;
-        lcdSetFontDirection(dev, DIRECTION0);
-    }
-    color = WHITE;
-    lcdDrawString(dev, fx, xpos, ypos, ascii, color);
-
-    lcdSetFontDirection(dev, 0);
-    color = RED;
-    lcdDrawFillArrow(dev, 10, 10, 0, 0, 5, color);
-    strcpy((char *)ascii, "0,0");
-    lcdDrawString(dev, fx, 0, 30, ascii, color);
-
-    color = GREEN;
-    lcdDrawFillArrow(dev, width - 11, 10, width - 1, 0, 5, color);
-    sprintf((char *)ascii, "%u,0", (unsigned int)(width - 1));
-    stlen = strlen((char *)ascii);
-    xpos = (width - 1) - (fontWidth * stlen);
-    lcdDrawString(dev, fx, xpos, 30, ascii, color);
-
-    color = GRAY;
-    lcdDrawFillArrow(dev, 10, height - 11, 0, height - 1, 5, color);
-    sprintf((char *)ascii, "0,%u", (unsigned int)(height - 1));
-    ypos = (height - 11) - (fontHeight) + 5;
-    lcdDrawString(dev, fx, 0, ypos, ascii, color);
-
-    color = CYAN;
-    lcdDrawFillArrow(dev, width - 11, height - 11, width - 1, height - 1, 5, color);
-    sprintf((char *)ascii, "%u,%u", (unsigned int)(width - 1), (unsigned int)(height - 1));
-    stlen = strlen((char *)ascii);
-    xpos = (width - 1) - (fontWidth * stlen);
-    lcdDrawString(dev, fx, xpos, ypos, ascii, color);
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t DirectionTest(TFT_t * dev, FontxFile *fx, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-	// get font width & height
-    uint8_t buffer[FontxGlyphBufSize];
-    uint8_t fontWidth;
-    uint8_t fontHeight;
-    GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-
-    uint16_t color;
-    lcdFillScreen(dev, BLACK);
-    uint8_t ascii[20];
-
-    color = RED;
-    strcpy((char *)ascii, "Direction=0");
-    lcdSetFontDirection(dev, 0);
-    lcdDrawString(dev, fx, 0, fontHeight - 1, ascii, color);
-
-    color = BLUE;
-    strcpy((char *)ascii, "Direction=2");
-    lcdSetFontDirection(dev, 2);
-    lcdDrawString(dev, fx, (width - 1), (height - 1) - (fontHeight * 1), ascii, color);
-
-    color = CYAN;
-    strcpy((char *)ascii, "Direction=1");
-    lcdSetFontDirection(dev, 1);
-    lcdDrawString(dev, fx, (width - 1) - fontHeight, 0, ascii, color);
-
-    color = GREEN;
-    strcpy((char *)ascii, "Direction=3");
-    lcdSetFontDirection(dev, 3);
-    lcdDrawString(dev, fx, (fontHeight - 1), height - 1, ascii, color);
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t HorizontalTest(TFT_t * dev, FontxFile *fx, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-	// get font width & height
-    uint8_t buffer[FontxGlyphBufSize];
-    uint8_t fontWidth;
-    uint8_t fontHeight;
-    GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-
-    uint16_t color;
-    lcdFillScreen(dev, BLACK);
-    uint8_t ascii[20];
-
-    color = RED;
-    strcpy((char *)ascii, "Direction=0");
-    lcdSetFontDirection(dev, 0);
-    lcdDrawString(dev, fx, 0, fontHeight * 1 - 1, ascii, color);
-    lcdSetFontUnderLine(dev, RED);
-    lcdDrawString(dev, fx, 0, fontHeight * 2 - 1, ascii, color);
-    lcdUnsetFontUnderLine(dev);
-
-    lcdSetFontFill(dev, GREEN);
-    lcdDrawString(dev, fx, 0, fontHeight * 3 - 1, ascii, color);
-    lcdSetFontUnderLine(dev, RED);
-    lcdDrawString(dev, fx, 0, fontHeight * 4 - 1, ascii, color);
-    lcdUnsetFontFill(dev);
-    lcdUnsetFontUnderLine(dev);
-
-    color = BLUE;
-    strcpy((char *)ascii, "Direction=2");
-    lcdSetFontDirection(dev, 2);
-    lcdDrawString(dev, fx, width, height - (fontHeight * 1) - 1, ascii, color);
-    lcdSetFontUnderLine(dev, BLUE);
-    lcdDrawString(dev, fx, width, height - (fontHeight * 2) - 1, ascii, color);
-    lcdUnsetFontUnderLine(dev);
-
-    lcdSetFontFill(dev, YELLOW);
-    lcdDrawString(dev, fx, width, height - (fontHeight * 3) - 1, ascii, color);
-    lcdSetFontUnderLine(dev, BLUE);
-    lcdDrawString(dev, fx, width, height - (fontHeight * 4) - 1, ascii, color);
-    lcdUnsetFontFill(dev);
-    lcdUnsetFontUnderLine(dev);
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t VerticalTest(TFT_t * dev, FontxFile *fx, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-	// get font width & height
-    uint8_t buffer[FontxGlyphBufSize];
-    uint8_t fontWidth;
-    uint8_t fontHeight;
-    GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-
-    uint16_t color;
-    lcdFillScreen(dev, BLACK);
-    uint8_t ascii[20];
-
-    color = RED;
-    strcpy((char *)ascii, "Direction=1");
-    lcdSetFontDirection(dev, 1);
-    lcdDrawString(dev, fx, width - (fontHeight * 1), 0, ascii, color);
-    lcdSetFontUnderLine(dev, RED);
-    lcdDrawString(dev, fx, width - (fontHeight * 2), 0, ascii, color);
-    lcdUnsetFontUnderLine(dev);
-
-    lcdSetFontFill(dev, GREEN);
-    lcdDrawString(dev, fx, width - (fontHeight * 3), 0, ascii, color);
-    lcdSetFontUnderLine(dev, RED);
-    lcdDrawString(dev, fx, width - (fontHeight * 4), 0, ascii, color);
-    lcdUnsetFontFill(dev);
-    lcdUnsetFontUnderLine(dev);
-
-    color = BLUE;
-    strcpy((char *)ascii, "Direction=3");
-    lcdSetFontDirection(dev, 3);
-    lcdDrawString(dev, fx, (fontHeight * 1) - 1, height, ascii, color);
-    lcdSetFontUnderLine(dev, BLUE);
-    lcdDrawString(dev, fx, (fontHeight * 2) - 1, height, ascii, color);
-    lcdUnsetFontUnderLine(dev);
-
-    lcdSetFontFill(dev, YELLOW);
-    lcdDrawString(dev, fx, (fontHeight * 3) - 1, height, ascii, color);
-    lcdSetFontUnderLine(dev, BLUE);
-    lcdDrawString(dev, fx, (fontHeight * 4) - 1, height, ascii, color);
-    lcdUnsetFontFill(dev);
-    lcdUnsetFontUnderLine(dev);
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t LineTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    uint16_t color;
-    lcdFillScreen(dev, BLACK);
-    color = RED;
-    for (int ypos = 0; ypos < height; ypos = ypos + 10) {
-        lcdDrawLine(dev, 0, ypos, width, ypos, color);
-        vTaskDelay(1);
-    }
-    for (int xpos = 0; xpos < width; xpos = xpos + 10) {
-        lcdDrawLine(dev, xpos, 0, xpos, height, color);
-        vTaskDelay(1);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t CircleTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    uint16_t color;
-    lcdFillScreen(dev, BLACK);
-    color = CYAN;
-    uint16_t xpos = width / 2;
-    uint16_t ypos = height / 2;
-    for (int i = 5; i < height; i = i + 5) {
-        lcdDrawCircle(dev, xpos, ypos, i, color);
-        vTaskDelay(1);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t RectAngleTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    uint16_t color;
-    lcdFillScreen(dev, BLACK);
-	color = CYAN;
-	uint16_t xpos = width / 2;
-	uint16_t ypos = height / 2;
-
-	uint16_t w = width * 0.6;
-	uint16_t h = w * 0.5;
-	int angle;
-	for (angle = 0; angle <= (360 * 3); angle = angle + 30) {
-		lcdDrawRectAngle(dev, xpos, ypos, w, h, angle, color);
-		usleep(10000);
-		lcdDrawRectAngle(dev, xpos, ypos, w, h, angle, BLACK);
-        vTaskDelay(1);
-    }
-
-	for (angle = 0; angle <= 180; angle = angle + 30) {
-        lcdDrawRectAngle(dev, xpos, ypos, w, h, angle, color);
-        vTaskDelay(1);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t TriangleTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    uint16_t color;
-    lcdFillScreen(dev, BLACK);
-    color = CYAN;
-    uint16_t xpos = width / 2;
-    uint16_t ypos = height / 2;
-
-    uint16_t w = width * 0.6;
-    uint16_t h = w * 1.0;
-    int angle;
-
-	for (angle = 0; angle <= (360 * 3); angle = angle + 30) {
-        lcdDrawTriangle(dev, xpos, ypos, w, h, angle, color);
-        usleep(10000);
-        lcdDrawTriangle(dev, xpos, ypos, w, h, angle, BLACK);
-        vTaskDelay(1);
-    }
-
-	for (angle = 0; angle <= 360; angle = angle + 30) {
-        lcdDrawTriangle(dev, xpos, ypos, w, h, angle, color);
-        vTaskDelay(1);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t RoundRectTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    uint16_t color;
-    uint16_t limit = width;
-    if (width > height) limit = height;
-    lcdFillScreen(dev, BLACK);
-    color = BLUE;
-    for (int i = 5; i < limit; i = i + 5) {
-        if (i > (limit - i - 1)) break;
-        lcdDrawRoundRect(dev, i, i, (width - i - 1), (height - i - 1), 10, color);
-        vTaskDelay(1);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t FillRectTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    uint16_t color;
-    lcdFillScreen(dev, CYAN);
-
-    uint16_t red;
-    uint16_t green;
-    uint16_t blue;
-    srand( (unsigned int)time( NULL ) );
-    for(int i=1;i<100;i++) {
-        red=rand()%255;
-        green=rand()%255;
-        blue=rand()%255;
-        color=rgb565_conv_with_color_tweaks(red, green, blue);
-        uint16_t xpos=rand()%width;
-        uint16_t ypos=rand()%height;
-        uint16_t size=rand()%(width/5);
-        lcdDrawFillRect(dev, xpos, ypos, xpos+size, ypos+size, color);
-        vTaskDelay(1);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t ColorTest(TFT_t * dev, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    uint16_t color;
-    lcdFillScreen(dev, WHITE);
-    color = RED;
-    uint16_t delta = height/16;
-    uint16_t ypos = 0;
-    for(int i=0;i<16;i++) {
-        lcdDrawFillRect(dev, 0, ypos, width-1, ypos+delta, color);
-        color = color >> 1;
-        ypos = ypos + delta;
-        vTaskDelay(1);
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-
-TickType_t BMPTest(TFT_t * dev, char * file, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    lcdSetFontDirection(dev, 0);
-    lcdFillScreen(dev, BLACK);
-
-    if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
-    {
-        FILE* fp = fopen(file, "rb");
-        if (fp == NULL) {
-            ESP_LOGW(__FUNCTION__, "File not found [%s]", file);
-            xSemaphoreGive(sdcard_mutex);
-            return 0;
-        }
-
-        bmpfile_t *result = (bmpfile_t*)malloc(sizeof(bmpfile_t));
-        size_t ret = fread(result->header.magic, 1, 2, fp);
-        assert(ret == 2);
-        if (result->header.magic[0] != 'B' || result->header.magic[1] != 'M') {
-            ESP_LOGW(__FUNCTION__, "File is not BMP");
-            free(result);
-            fclose(fp);
-            xSemaphoreGive(sdcard_mutex);
-            return 0;
-        }
-        ret = fread(&result->header.filesz, 4, 1, fp);
-        assert(ret == 1);
-        ESP_LOGD(__FUNCTION__, "result->header.filesz=%u", (unsigned int)result->header.filesz);
-        ret = fread(&result->header.creator1, 2, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->header.creator2, 2, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->header.offset, 4, 1, fp);
-        assert(ret == 1);
-
-        ret = fread(&result->dib.header_sz, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.width, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.height, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.nplanes, 2, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.depth, 2, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.compress_type, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.bmp_bytesz, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.hres, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.vres, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.ncolors, 4, 1, fp);
-        assert(ret == 1);
-        ret = fread(&result->dib.nimpcolors, 4, 1, fp);
-        assert(ret == 1);
-
-        ESP_LOGI(__FUNCTION__, "BMP Header Details:");
-        ESP_LOGI(__FUNCTION__, "Width: %u, Height: %u", (unsigned int)result->dib.width, (unsigned int)result->dib.height);
-        ESP_LOGI(__FUNCTION__, "Depth: %u bits, Compression Type: %u", (unsigned int)result->dib.depth, (unsigned int)result->dib.compress_type);
-        ESP_LOGI(__FUNCTION__, "BMP Bytes Size: %u", (unsigned int)result->dib.bmp_bytesz);
-
-        xSemaphoreGive(sdcard_mutex);
-
-        if ((result->dib.depth == 24) && (result->dib.compress_type == 0)) {
-            ESP_LOGD(__FUNCTION__, "Processing 24-bit BMP");
-            uint32_t rowSize = (result->dib.width * 3 + 3) & ~3;
-            int w = result->dib.width;
-            int h = result->dib.height;
-            ESP_LOGD(__FUNCTION__, "w=%d h=%d", w, h);
-            int _x;
-            int _w;
-            int _cols;
-            int _cole;
-            if (width >= w) {
-                _x = (width - w) / 2;
-                _w = w;
-                _cols = 0;
-                _cole = w - 1;
-            } else {
-                _x = 0;
-                _w = width;
-                _cols = (w - width) / 2;
-                _cole = _cols + width - 1;
-            }
-            ESP_LOGD(__FUNCTION__, "_x=%d _w=%d _cols=%d _cole=%d", _x, _w, _cols, _cole);
-
-            int _y;
-            int _rows;
-            int _rowe;
-            if (height >= h) {
-                _y = (height - h) / 2;
-                _rows = 0;
-                _rowe = h - 1;
-            } else {
-                _y = 0;
-                _rows = (h - height) / 2;
-                _rowe = _rows + height - 1;
-            }
-            ESP_LOGD(__FUNCTION__, "_y=%d _rows=%d _rowe=%d", _y, _rows, _rowe);
-
-            #define BUFFPIXEL 20
-            uint8_t sdbuffer[3 * BUFFPIXEL];
-            uint16_t *colors = (uint16_t*)malloc(sizeof(uint16_t) * w);
-
-            for (int row = 0; row < h; row++) {
-                if (row < _rows || row > _rowe) continue;
-                if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
-                {
-                    int pos = result->header.offset + (h - 1 - row) * rowSize;
-                    fseek(fp, pos, SEEK_SET);
-                    int buffidx = sizeof(sdbuffer);
-
-                    int index = 0;
-                    for (int col = 0; col < w; col++) {
-                        if (buffidx >= sizeof(sdbuffer)) {
-                            fread(sdbuffer, sizeof(sdbuffer), 1, fp);
-                            buffidx = 0;
-                        }
-                        if (col < _cols || col > _cole) continue;
-                        uint8_t b = sdbuffer[buffidx++];
-                        uint8_t g = sdbuffer[buffidx++];
-                        uint8_t r = sdbuffer[buffidx++];
-                        colors[index++] = rgb565_conv_with_color_tweaks(r, g, b);
-                    }
-
-                    xSemaphoreGive(sdcard_mutex);
-
-                    ESP_LOGD(__FUNCTION__, "lcdDrawMultiPixels _x=%d _y=%d row=%d", _x, _y, row);
-                    lcdDrawMultiPixels(dev, _x, _y, _w, colors);
-                    _y++;
-                    vTaskDelay(1);
-                }
-                else
-                {
-                    ESP_LOGW(__FUNCTION__, "SD card busy, skipping remaining rows");
-                    break;
-                }
-            }
-
-            free(colors);
-        }
-
-        free(result);
-        fclose(fp);
-    }
-    else
-    {
-        ESP_LOGW(__FUNCTION__, "SD card busy, skipping image: %s", file);
-        return 0;
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "Elapsed time [ms]: %u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-TickType_t JPEGTest(TFT_t * dev, char * file, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    lcdSetFontDirection(dev, 0);
-
-    pixel_jpeg **pixels;
-    int imageWidth;
-    int imageHeight;
-
-    if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
-    {
-        esp_err_t err = decode_jpeg(&pixels, file, width, height, &imageWidth, &imageHeight);
-        xSemaphoreGive(sdcard_mutex);
-
-        ESP_LOGD(__FUNCTION__, "decode_image err=%d imageWidth=%d imageHeight=%d", err, imageWidth, imageHeight);
-        if (err == ESP_OK) {
-
-            uint16_t _width = width;
-            uint16_t _cols = 0;
-            if (width > imageWidth) {
-                _width = imageWidth;
-                _cols = (width - imageWidth) / 2;
-            }
-            ESP_LOGD(__FUNCTION__, "_width=%d _cols=%d", _width, _cols);
-
-            uint16_t _height = height;
-            uint16_t _rows = 0;
-            if (height > imageHeight) {
-                _height = imageHeight;
-                _rows = (height - imageHeight) / 2;
-            }
-            ESP_LOGD(__FUNCTION__, "_height=%d _rows=%d", _height, _rows);
-            uint16_t *colors = (uint16_t*)malloc(sizeof(uint16_t) * _width);
-
-            for(int y = 0; y < _height; y++){
-                for(int x = 0;x < _width; x++){
-                    colors[x] = pixels[y][x];
-                }
-                lcdDrawMultiPixels(dev, _cols, y+_rows, _width, colors);
-                vTaskDelay(1);
-            }
-
-            free(colors);
-            release_image(&pixels, width, height);
-            ESP_LOGD(__FUNCTION__, "Finish");
-        } else {
-            ESP_LOGE(__FUNCTION__, "decode_jpeg fail=%d", err);
-        }
-    }
-    else
-    {
-        ESP_LOGW(__FUNCTION__, "SD card busy, skipping image: %s", file);
-        return 0;
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-
-TickType_t PNGTest(TFT_t * dev, char * file, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    lcdSetFontDirection(dev, 0);
-    lcdFillScreen(dev, BLACK);
-
-    if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
-    {
-        FILE* fp = fopen(file, "rb");
-        if (fp == NULL) {
-            ESP_LOGW(__FUNCTION__, "File not found [%s]", file);
-            xSemaphoreGive(sdcard_mutex);
-            return 0;
-        }
-
-        char buf[1024];
-        size_t remain = 0;
-        int len;
-
-        pngle_t *pngle = pngle_new(width, height);
-
-        pngle_set_init_callback(pngle, png_init);
-        pngle_set_draw_callback(pngle, png_draw);
-        pngle_set_done_callback(pngle, png_finish);
-
-        double display_gamma = 2.2;
-        pngle_set_display_gamma(pngle, display_gamma);
-
-        while (!feof(fp)) {
-            if (remain >= sizeof(buf)) {
-                ESP_LOGE(__FUNCTION__, "Buffer exceeded");
-                while(1) vTaskDelay(1);
-            }
-
-            len = fread(buf + remain, 1, sizeof(buf) - remain, fp);
-            if (len <= 0) {
-                break;
-            }
-
-            xSemaphoreGive(sdcard_mutex);
-
-            int fed = pngle_feed(pngle, buf, remain + len);
-            if (fed < 0) {
-                ESP_LOGE(__FUNCTION__, "ERROR; %s", pngle_error(pngle));
-                while(1) vTaskDelay(1);
-            }
-
-            remain = remain + len - fed;
-            if (remain > 0) memmove(buf, buf + fed, remain);
-
-            if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE)
-            {
-                ESP_LOGW(__FUNCTION__, "Failed to re-acquire SD card mutex");
-                fclose(fp);
-                pngle_destroy(pngle, width, height);
-                return 0;
-            }
-        }
-
-        fclose(fp);
-        xSemaphoreGive(sdcard_mutex);
-
-        uint16_t _width = width;
-        uint16_t _cols = 0;
-        if (width > pngle->imageWidth) {
-            _width = pngle->imageWidth;
-            _cols = (width - pngle->imageWidth) / 2;
-        }
-        ESP_LOGD(__FUNCTION__, "_width=%d _cols=%d", _width, _cols);
-
-        uint16_t _height = height;
-        uint16_t _rows = 0;
-        if (height > pngle->imageHeight) {
-                _height = pngle->imageHeight;
-                _rows = (height - pngle->imageHeight) / 2;
-        }
-        ESP_LOGD(__FUNCTION__, "_height=%d _rows=%d", _height, _rows);
-        uint16_t *colors = (uint16_t*)malloc(sizeof(uint16_t) * _width);
-
-        for(int y = 0; y < _height; y++){
-            for(int x = 0;x < _width; x++){
-                colors[x] = pngle->pixels[y][x];
-            }
-            lcdDrawMultiPixels(dev, _cols, y+_rows, _width, colors);
-            vTaskDelay(1);
-        }
-        free(colors);
-        pngle_destroy(pngle, width, height);
-    }
-    else
-    {
-        ESP_LOGW(__FUNCTION__, "SD card busy, skipping image: %s", file);
-        return 0;
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return diffTick;
-}
-
-
-TickType_t CodeTest(TFT_t * dev, FontxFile *fx, int width, int height) {
-	TickType_t startTick, endTick, diffTick;
-	startTick = xTaskGetTickCount();
-
-	uint8_t buffer[FontxGlyphBufSize];
-	uint8_t fontWidth;
-	uint8_t fontHeight;
-	GetFontx(fx, 0, buffer, &fontWidth, &fontHeight);
-
-	uint8_t xmoji = width / fontWidth;
-	uint8_t ymoji = height / fontHeight;
-
-	uint16_t color;
-	lcdFillScreen(dev, BLACK);
-	uint8_t code;
-
-	color = CYAN;
-	lcdSetFontDirection(dev, 0);
-	code = 0xA0;
-	for(int y=0;y<ymoji;y++) {
-		uint16_t xpos = 0;
-		uint16_t ypos =  fontHeight*(y+1)-1;
-		for(int x=0;x<xmoji;x++) {
-			xpos = lcdDrawCode(dev, fx, xpos, ypos, code, color);
-			if (code == 0xFF) break;
-			code++;
-		}
-	}
-
-	endTick = xTaskGetTickCount();
-	diffTick = endTick - startTick;
-	ESP_LOGI(__FUNCTION__, "elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-	return diffTick;
-}
-
-TickType_t GIFTest(TFT_t * dev, char * file, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    lcdSetFontDirection(dev, 0);
-    lcdFillScreen(dev, BLACK);
-
-    if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) == pdTRUE)
-    {
-        esp_err_t err = decode_gif(dev, file, width, height);
-        xSemaphoreGive(sdcard_mutex);
-
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to decode GIF: %s", file);
-            return err;
-        }
-    }
-    else
-    {
-        ESP_LOGW(TAG, "SD card busy, skipping image: %s", file);
-        return ESP_FAIL;
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(TAG, "GIFTest elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return ESP_OK;
-}
-
-TickType_t RGB565ANITest(TFT_t * dev, char * file, int width, int height) {
-    TickType_t startTick, endTick, diffTick;
-    startTick = xTaskGetTickCount();
-
-    lcdSetFontDirection(dev, 0);
-    lcdFillScreen(dev, BLACK);
-
-    if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) == pdTRUE)
-    {
-        esp_err_t err = play_rgb565ani(dev, file, width, height);
-        xSemaphoreGive(sdcard_mutex);
-
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to play RGB565ANI: %s", file);
-            return err;
-        }
-    }
-    else
-    {
-        ESP_LOGW(TAG, "SD card busy, skipping animation: %s", file);
-        return ESP_FAIL;
-    }
-
-    endTick = xTaskGetTickCount();
-    diffTick = endTick - startTick;
-    ESP_LOGI(TAG, "RGB565ANITest elapsed time[ms]:%u", (unsigned int)(diffTick * portTICK_PERIOD_MS));
-    return ESP_OK;
-}
-
-void st7796s_task(void *pvParameters) 
+// Official I80 bus handle / ST7796 panel
+static esp_lcd_i80_bus_handle_t i80_bus = NULL;
+static esp_lcd_panel_handle_t panel_handle = NULL;
+
+/* NEW: Turn backlight on if LCD_BL_PIN >= 0 */
+static void turn_on_backlight(void)
 {
-    FontxFile fx16G[2];
-    FontxFile fx24G[2];
-    FontxFile fx32G[2];
-    FontxFile fx32L[2];
-    InitFontx(fx16G, "/spiffs/ILGH16XB.FNT", "");
-    InitFontx(fx24G, "/spiffs/ILGH24XB.FNT", "");
-    InitFontx(fx32G, "/spiffs/ILGH32XB.FNT", "");
-    InitFontx(fx32L, "/spiffs/LATIN32B.FNT", "");
+    if (LCD_BL_PIN >= 0) {
+        gpio_config_t bk_gpio = {
+            .pin_bit_mask = (1ULL << LCD_BL_PIN),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = false,
+            .pull_down_en = false,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        gpio_config(&bk_gpio);
+        gpio_set_level(LCD_BL_PIN, 1);
+        ESP_LOGI(TAG, "Backlight pin %d is now ON", LCD_BL_PIN);
+    } else {
+        ESP_LOGW(TAG, "No backlight pin configured, skipping backlight ON");
+    }
+}
 
-    FontxFile fx16M[2];
-    FontxFile fx24M[2];
-    FontxFile fx32M[2];
-    InitFontx(fx16M, "/spiffs/ILMH16XB.FNT", "");
-    InitFontx(fx24M, "/spiffs/ILMH24XB.FNT", "");
-    InitFontx(fx32M, "/spiffs/ILMH32XB.FNT", "");
+/* NEW: Turn backlight off if LCD_BL_PIN >= 0 */
+// static void turn_off_backlight(void)
+// {
+//     if (LCD_BL_PIN >= 0) {
+//         gpio_set_level(LCD_BL_PIN, 0);
+//         ESP_LOGI(TAG, "Backlight pin %d is now OFF", LCD_BL_PIN);
+//     } else {
+//         ESP_LOGW(TAG, "No backlight pin configured, skipping backlight OFF");
+//     }
+// }
 
-    TFT_t dev;
-    // Replace SPI initialization with parallel initialization
-    parallel_master_init(&dev, -1, -1, -1, CONFIG_DC_GPIO, CONFIG_RESET_GPIO, CONFIG_BL_GPIO, -1, -1);
-    ESP_LOGI(TAG, "Parallel Master initialized");
+// Helper: Initialize the I80 bus + ST7796 panel
+static void init_i80_st7796(void)
+{
+    // 1. i80 bus config
+    esp_lcd_i80_bus_config_t bus_config = {
+        .dc_gpio_num = LCD_DC_PIN,
+        .wr_gpio_num = LCD_WR_PIN,
+        .data_gpio_nums = {
+            LCD_DATA0_PIN,
+            LCD_DATA1_PIN,
+            LCD_DATA2_PIN,
+            LCD_DATA3_PIN,
+            LCD_DATA4_PIN,
+            LCD_DATA5_PIN,
+            LCD_DATA6_PIN,
+            LCD_DATA7_PIN
+        },
+        .bus_width = 8,
+        .clk_src = LCD_CLK_SRC_DEFAULT,
+        // Enough for partial-chunk approach, e.g. 160 lines
+        .max_transfer_bytes = LCD_WIDTH * 162 * 2,
+    };
+    ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &i80_bus));
 
-    lcdInit(&dev, CONFIG_WIDTH, CONFIG_HEIGHT, CONFIG_OFFSETX, CONFIG_OFFSETY, CONFIG_ORIENTATION);
-    ESP_LOGI(TAG, "LCD Initialized with orientation 0x%02X", CONFIG_ORIENTATION);
+    // 2. i80 panel io config
+    esp_lcd_panel_io_i80_config_t io_config = {
+        .cs_gpio_num = LCD_CS_PIN,    // or -1 if permanently tied low
+        .pclk_hz = LCD_PIXEL_CLK_HZ,  // pixel clock from Kconfig
+        .trans_queue_depth = 10,
+        .dc_levels = {
+            .dc_idle_level = 0,  // DC=0 when idle
+            .dc_cmd_level = 0,   // DC=0 for commands
+            .dc_dummy_level = 0,
+            .dc_data_level = 1,  // DC=1 for data
+        },
+        .lcd_cmd_bits = 8,
+        .lcd_param_bits = 8,
+    };
+    esp_lcd_panel_io_handle_t io_handle = NULL;
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(i80_bus, &io_config, &io_handle));
+
+    // 3. ST7796 panel config
+    // CHANGED: Switch from RGB to BGR to fix color swap
+    esp_lcd_panel_dev_config_t panel_dev_config = {
+        .reset_gpio_num = LCD_RST_PIN,  // or -1 if no reset line
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+        .color_space = ESP_LCD_COLOR_SPACE_BGR,  // <-- was ESP_LCD_COLOR_SPACE_RGB
+#else
+        .rgb_endian = LCD_RGB_ENDIAN_BGR,         // <-- was LCD_RGB_ENDIAN_RGB
+#endif
+        .bits_per_pixel = 16,
+    };
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7796(io_handle, &panel_dev_config, &panel_handle));
+
+
+    // Reset the panel
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
+    // Initialize it
+    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    // Turn on display
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+
+    // ------------------- ORIENTATION FIX -------------------
+    // For a 480(W) x 320(H) panel that is currently rotated or truncated,
+    // we can swap X/Y axes (rotate 90) and optionally mirror to match your hardware.
+    // Below is an example rotation that might fix your issue:
+    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, true));    // rotate 90 degrees
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, false, true)); 
+    // ^ If your display is upside down or mirrored incorrectly, toggle these booleans.
+    // For example, mirror(panel_handle, true, false), or remove the mirror call if unnecessary.
+    // -------------------------------------------------------
+
+    ESP_LOGI(TAG, "ST7796 panel via I80 bus initialized successfully");
+
+    // Optionally, reduce extremely frequent debug logs from underlying SPI driver used by I80:
+    // esp_log_level_set("spi_master", ESP_LOG_ERROR);
+}
+
+// Task that scans .rgb565ani in /sdcard/ and plays them
+void display_task(void *pvParameters)
+{
+    // Initialize the I80 + ST7796
+    init_i80_st7796();
+
+    // (Optional) Turn on backlight here if you haven't already
+    turn_on_backlight();
+
+    ESP_LOGI(TAG, "Starting to scan /sdcard for .rgb565ani...");
 
     while (1) {
-        if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE)
-        {
+        // Try to acquire the SD card
+        if (xSemaphoreTake(sdcard_mutex, 0) == pdTRUE) {
             DIR *dir = opendir("/sdcard/");
             if (dir == NULL) {
                 ESP_LOGE(TAG, "Failed to open directory /sdcard/");
                 xSemaphoreGive(sdcard_mutex);
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
 
@@ -1061,63 +300,24 @@ void st7796s_task(void *pvParameters)
                     snprintf(filepath, sizeof(filepath), "/sdcard/%s", filename);
 
                     char *ext = strrchr(filename, '.');
-                    if (ext != NULL) {
-                        ext++;
-                        for (char *p = ext; *p; ++p) *p = tolower(*p);
+                    if (ext) {
+                        ext++; // skip the dot
+                        // convert extension to lowercase for case-insensitive
+                        for (char *p = ext; *p; ++p) {
+                            *p = tolower(*p);
+                        }
 
-                        if (strcmp(ext, "gif") == 0 && PLAY_GIF) {
-                            ESP_LOGI(TAG, "Playing GIF: %s", filepath);
-                            xSemaphoreGive(sdcard_mutex);
-                            esp_err_t gif_err = GIFTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-                            if (gif_err != ESP_OK) {
-                                ESP_LOGE(TAG, "Failed to play GIF: %s", filepath);
-                            }
-                            if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
-                                ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
-                                break;
-                            }
-                            continue;
-
-                        } else if ((strcmp(ext, "jpeg") == 0 || strcmp(ext, "jpg") == 0) && PLAY_JPEG) {
-                            ESP_LOGI(TAG, "Displaying JPEG: %s", filepath);
-                            xSemaphoreGive(sdcard_mutex);
-                            JPEGTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-                            WAIT_LONG;
-                            if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
-                                ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
-                                break;
-                            }
-                            continue;
-
-                        } else if (strcmp(ext, "bmp") == 0 && PLAY_BMP) {
-                            ESP_LOGI(TAG, "Displaying BMP: %s", filepath);
-                            xSemaphoreGive(sdcard_mutex);
-                            BMPTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-                            WAIT_LONG;
-                            if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
-                                ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
-                                break;
-                            }
-                            continue;
-
-                        } else if (strcmp(ext, "png") == 0 && PLAY_PNG) {
-                            ESP_LOGI(TAG, "Displaying PNG: %s", filepath);
-                            xSemaphoreGive(sdcard_mutex);
-                            PNGTest(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-                            WAIT_LONG;
-                            if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
-                                ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
-                                break;
-                            }
-                            continue;
-
-                        } else if (strcmp(ext, "rgb565ani") == 0 && PLAY_RGB565ANI) {
+                        // Only .rgb565ani
+                        if ((strcmp(ext, "rgb565ani") == 0) && PLAY_RGB565ANI) {
                             ESP_LOGI(TAG, "Playing RGB565ANI: %s", filepath);
                             xSemaphoreGive(sdcard_mutex);
-                            esp_err_t ani_err = play_rgb565ani(&dev, filepath, CONFIG_WIDTH, CONFIG_HEIGHT);
-                            if (ani_err != ESP_OK) {
+
+                            // We pass the panel_handle to the decode function
+                            esp_err_t err = play_rgb565ani(panel_handle, filepath, LCD_WIDTH, LCD_HEIGHT);
+                            if (err != ESP_OK) {
                                 ESP_LOGE(TAG, "Failed to play RGB565ANI: %s", filepath);
                             }
+
                             if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY) != pdTRUE) {
                                 ESP_LOGE(TAG, "Failed to re-acquire SD card mutex");
                                 break;
@@ -1130,33 +330,34 @@ void st7796s_task(void *pvParameters)
 
             closedir(dir);
             xSemaphoreGive(sdcard_mutex);
-        }
-        else
-        {
-            ESP_LOGW(TAG, "SD card busy, skipping image display cycle");
+        } else {
+            ESP_LOGW(TAG, "SD card busy, skipping .rgb565ani cycle");
         }
 
+        // Let other tasks run
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
-    while (1) {
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
+    // Not reached
+    vTaskDelete(NULL);
 }
 
-void init_sdcard(void) {
+// SD card init code
+static void init_sdcard(void)
+{
     ESP_LOGI(TAG, "Initializing SD card");
-
     if (xSemaphoreTake(sdcard_mutex, portMAX_DELAY)) {
         sdmmc_host_t host = SDSPI_HOST_DEFAULT();
         host.slot = SPI2_HOST;
 
+        // Increased max_transfer_sz from 4000 to a larger value, e.g. 64KB
         spi_bus_config_t bus_cfg = {
             .mosi_io_num = CONFIG_SD_MOSI_GPIO,
             .miso_io_num = CONFIG_SD_MISO_GPIO,
             .sclk_io_num = CONFIG_SD_SCLK_GPIO,
             .quadwp_io_num = -1,
             .quadhd_io_num = -1,
-            .max_transfer_sz = 4000,
+            .max_transfer_sz = 64 * 1024  // was 4000
         };
 
         esp_err_t ret = spi_bus_initialize(host.slot, &bus_cfg, SPI_DMA_CH_AUTO);
@@ -1185,7 +386,6 @@ void init_sdcard(void) {
         }
 
         sdmmc_card_print_info(stdout, sdcard);
-
         if (sdcard->csd.capacity == 0 || sdcard->csd.sector_size == 0) {
             ESP_LOGE(TAG, "SD card attributes are invalid (capacity: %u, sector size: %u)",
                      (unsigned int)sdcard->csd.capacity, (unsigned int)sdcard->csd.sector_size);
@@ -1340,7 +540,7 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void* buff
 
         if (accumulated_sectors >= 1000 || last_logged_lba == 0) {
             uint32_t end_lba = lba + accumulated_sectors - 1;
-            ESP_LOGI(TAG, "Reading from LBA %u to LBA %u, total sectors: %u", 
+            ESP_LOGI(TAG, "Reading from LBA %u to LBA %u, total sectors: %u",
                      (unsigned int)last_logged_lba, (unsigned int)end_lba, (unsigned int)accumulated_sectors);
 
             accumulated_sectors = 0;
@@ -1521,6 +721,7 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
     BaseType_t higher_priority_task_woken = pdFALSE;
 
     if (xQueueSendFromISR(button_queue, &gpio_num, &higher_priority_task_woken) != pdTRUE) {
+        // queue is full or error
     }
 
     if (higher_priority_task_woken) {
@@ -1590,43 +791,40 @@ static void button_task(void* arg) {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting app_main");
 
-    ESP_LOGI(TAG, "Initializing SPIFFS");
-
-    esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
-        .partition_label = NULL,
-        .max_files = 12,
-        .format_if_mount_failed = true
-    };
-
-    esp_err_t ret = esp_vfs_spiffs_register(&conf);
-    if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            ESP_LOGE(TAG, "Failed to mount or format filesystem");
-        } else if (ret == ESP_ERR_NOT_FOUND) {
-            ESP_LOGE(TAG, "Failed to find SPIFFS partition");
+    // SPIFFS is not strictly required for .rgb565ani, but we keep it for minimal changes
+    {
+        esp_vfs_spiffs_conf_t conf = {
+            .base_path = "/spiffs",
+            .partition_label = NULL,
+            .max_files = 12,
+            .format_if_mount_failed = true
+        };
+        esp_err_t ret = esp_vfs_spiffs_register(&conf);
+        if (ret != ESP_OK) {
+            if (ret == ESP_FAIL) {
+                ESP_LOGE(TAG, "Failed to mount or format filesystem");
+            } else if (ret == ESP_ERR_NOT_FOUND) {
+                ESP_LOGE(TAG, "Failed to find SPIFFS partition");
+            } else {
+                ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+            }
         } else {
-            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+            size_t total = 0, used = 0;
+            ret = esp_spiffs_info(NULL, &total, &used);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
+            } else {
+                ESP_LOGI(TAG, "SPIFFS Partition size: total: %u, used: %u",
+                         (unsigned int)total, (unsigned int)used);
+            }
         }
-        return;
     }
-
-    size_t total = 0, used = 0;
-    ret = esp_spiffs_info(NULL, &total, &used);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "Partition size: total: %u, used: %u", (unsigned int)total, (unsigned int)used);
-    }
-
-    SPIFFS_Directory("/spiffs/");
 
     sdcard_mutex = xSemaphoreCreateMutex();
     if (sdcard_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create SD card mutex");
         return;
     }
-
     init_sdcard();
 
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
@@ -1709,5 +907,9 @@ void app_main(void) {
 
     configure_gpio_and_led();
 
-    xTaskCreate(st7796s_task, "ST7796S", 1024 * 6, NULL, 2, NULL);
+    // Optionally turn the backlight on here (before display_task):
+    turn_on_backlight();
+
+    // Now create our display task
+    xTaskCreate(display_task, "display_task", 6 * 1024, NULL, 2, NULL);
 }

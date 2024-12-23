@@ -10,6 +10,10 @@
 #include <inttypes.h>
 #include <string.h>
 
+// Added includes for FreeRTOS and task functions (TickType_t, xTaskGetTickCount, vTaskDelay, portTICK_PERIOD_MS)
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 static const char *TAG = "decode_gif";
 
 // Structure to hold bitmap information
@@ -207,15 +211,11 @@ esp_err_t decode_gif(TFT_t *dev, const char *file, int screenWidth, int screenHe
              gif_info->width, gif_info->height, gif_info->frame_count);
 
     // Verify dimensions match the screen
-    if (gif_info->width != screenWidth || gif_info->height != screenHeight) {
+    if (gif_info->width != (uint32_t)screenWidth || gif_info->height != (uint32_t)screenHeight) {
         ESP_LOGW(TAG, "GIF dimensions (%" PRIu32 "x%" PRIu32 ") don't match screen (%dx%d)! GIF should be exactly %dx%d!",
                  gif_info->width, gif_info->height, screenWidth, screenHeight,
                  screenWidth, screenHeight);
     }
-
-    // Allocate 2D pixel buffer for RGB565 pixels
-    // Since we're using a 2D array, we don't need an additional linear buffer
-    // The `pixels` array in `gif_bitmap_t` will hold the RGB565 data
 
     ESP_LOGI(TAG, "Starting frame drawing with dimensions: GIF(%" PRIu32 "x%" PRIu32 ") -> Display(%dx%d)",
              gif_info->width, gif_info->height, screenWidth, screenHeight);
@@ -260,33 +260,21 @@ esp_err_t decode_gif(TFT_t *dev, const char *file, int screenWidth, int screenHe
         uint8_t *frame_buffer = gif_bitmap->data;
 
         // Pre-convert the entire frame to RGB565 and store in the 2D pixels array
-        for (int y = 0; y < gif_info->height; y++) {
-            // Feed watchdog every few lines to prevent watchdog timeout
-            if ((y % 32) == 0) {
-                // vTaskDelay(1);
-            }
-
+        for (int y = 0; y < (int)gif_info->height; y++) {
             // Convert one line of pixels from R8G8B8A8 to RGB565
-            for (int x = 0; x < gif_info->width; x++) {
+            for (int x = 0; x < (int)gif_info->width; x++) {
                 int pixel_index = (y * gif_info->width + x) * 4;
                 uint8_t r = frame_buffer[pixel_index + 0];  // Red
                 uint8_t g = frame_buffer[pixel_index + 1];  // Green
                 uint8_t b = frame_buffer[pixel_index + 2];  // Blue
                 uint8_t a = frame_buffer[pixel_index + 3];  // Alpha
 
-                // Convert RGBA to RGB565 and store in 2D pixels array
                 gif_bitmap->pixels[y][x] = rgba_to_rgb565(r, g, b, a);
             }
         }
 
         // Draw each row from the 2D pixels array
-        for (int y = 0; y < gif_info->height; y++) {
-            // Feed watchdog every few lines to prevent watchdog timeout
-            if ((y % 160) == 0) {
-                // vTaskDelay(1);
-            }
-
-            // Draw the line directly from the 2D pixels array
+        for (int y = 0; y < (int)gif_info->height; y++) {
             lcdDrawMultiPixels(dev, 0, y, gif_info->width, gif_bitmap->pixels[y]);
         }
 

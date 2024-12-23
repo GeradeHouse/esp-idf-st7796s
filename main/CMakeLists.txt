@@ -25,6 +25,7 @@ idf_component_register(
     REQUIRES driver               # Public dependencies
              freertos
              esp_system
+             esp_lcd
              spiffs
              fatfs
              espressif__tinyusb

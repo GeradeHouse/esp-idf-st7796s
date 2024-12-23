@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 10,
+            "activePatchIndex": 11,
             "patches": [
                 {
                     "date": 1731785849414,
@@ -48,6 +48,10 @@
                 {
                     "date": 1732482725577,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -247,7 +247,7 @@\n         help\r\n             Adjusts the Yellow-Blue scale for highlights.\r\n             Negative values increase yellow; positive values increase blue.\r\n \r\n-endmenu\r\n+    endmenu\r\n \r\n endmenu\r\n"
+                },
+                {
+                    "date": 1734910439428,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -140,8 +140,16 @@\n                 When it is -1, no backlight control is performed.\r\n \r\n     endmenu\r\n \r\n+    # NEW PIXEL CLOCK CONFIG\r\n+    config PIXEL_CLK_HZ\r\n+        int \"Pixel Clock Frequency (Hz)\"\r\n+        range 1000000 40000000\r\n+        default 16000000\r\n+        help\r\n+            The I80 bus pixel clock frequency in Hertz (e.g. 16MHz for ST7796S)\r\n+\r\n     config INVERSION\r\n         bool \"Enable Display Inversion\"\r\n         default false\r\n         help\r\n@@ -294,7 +302,7 @@\n         help\r\n             Adjusts the Yellow-Blue scale for highlights.\r\n             Negative values increase yellow; positive values increase blue.\r\n \r\n-    endmenu\r\n+endmenu\r\n \r\n endmenu\r\n"
                 }
             ],
             "date": 1731785849414,

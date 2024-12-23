@@ -141,6 +141,14 @@ menu "ST7796S Configuration"
 
     endmenu
 
+    # NEW PIXEL CLOCK CONFIG
+    config PIXEL_CLK_HZ
+        int "Pixel Clock Frequency (Hz)"
+        range 1000000 40000000
+        default 16000000
+        help
+            The I80 bus pixel clock frequency in Hertz (e.g. 16MHz for ST7796S)
+
     config INVERSION
         bool "Enable Display Inversion"
         default false
@@ -295,6 +303,6 @@ menu "Color Tweaks"
             Adjusts the Yellow-Blue scale for highlights.
             Negative values increase yellow; positive values increase blue.
 
-    endmenu
+endmenu
 
 endmenu
